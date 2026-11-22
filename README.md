@@ -46,7 +46,20 @@ export AWS_REGION=us-east-2
 npm run sandbox:once              # deploy once, then exit (no watcher)
 ```
 
-Cost posture: Cognito + on-demand AppSync/DynamoDB + S3 only. Use `--once` so nothing watches continuously. When idle for a while: `npx ampx sandbox delete --profile steve`.
+Cost posture: Cognito + on-demand AppSync/DynamoDB + S3 + Lambda (xAI calls). Use `--once` so nothing watches continuously. Docker Desktop may be required once to bundle Lambda. When idle: `npx ampx sandbox delete --profile steve`.
+
+xAI: set sandbox secret from `.env.local` (never commit keys):
+
+```bash
+# reads XAI_API_KEY from .env.local without printing it
+python3 - <<'PY'
+from pathlib import Path
+import os, subprocess
+key = next(l.split("=",1)[1].strip() for l in Path(".env.local").read_text().splitlines() if l.startswith("XAI_API_KEY="))
+subprocess.run(["npx","ampx","sandbox","secret","set","XAI_API_KEY","--profile","steve"], input=key+"\n", text=True, check=True, env={**os.environ, "AWS_PROFILE":"steve","AWS_REGION":"us-east-2"})
+print("secret set")
+PY
+```
 
 Then:
 

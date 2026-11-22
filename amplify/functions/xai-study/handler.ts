@@ -1,0 +1,235 @@
+type AppSyncEvent = {
+  fieldName?: string
+  info?: { fieldName?: string }
+  arguments?: Record<string, unknown>
+}
+
+type GeneratedQuestion = {
+  id: string
+  type: 'multiple_choice' | 'written' | 'true_false'
+  stem: string
+  options?: string[]
+  correctAnswer?: string
+  rubric?: string
+  explanation?: string
+}
+
+function fieldName(event: AppSyncEvent): string {
+  return event.info?.fieldName ?? event.fieldName ?? ''
+}
+
+function requireString(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`${name} is required`)
+  }
+  return value.trim()
+}
+
+function redactKey(message: string): string {
+  return message.replace(/xai-[A-Za-z0-9_-]+/g, 'xai-[REDACTED]')
+}
+
+async function callXai(system: string, user: string): Promise<string> {
+  const apiKey = process.env.XAI_API_KEY
+  if (!apiKey) {
+    throw new Error('XAI_API_KEY is not configured on the server')
+  }
+  const model = process.env.XAI_MODEL || 'grok-3-mini'
+
+  const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const body = redactKey(await response.text())
+    throw new Error(`xAI request failed (${response.status}): ${body.slice(0, 400)}`)
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>
+  }
+  const content = payload.choices?.[0]?.message?.content
+  if (!content) {
+    throw new Error('xAI returned an empty response')
+  }
+  return content
+}
+
+function parseJsonObject(text: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
+    }
+    throw new Error('Model did not return valid JSON')
+  }
+}
+
+function normalizeQuestions(
+  raw: unknown,
+  expectedCount: number,
+): GeneratedQuestion[] {
+  if (!Array.isArray(raw)) {
+    throw new Error('Model JSON missing questions array')
+  }
+
+  const questions: GeneratedQuestion[] = []
+  for (let i = 0; i < raw.length; i += 1) {
+    const item = raw[i] as Record<string, unknown>
+    const typeRaw = String(item.type ?? '')
+    let type: GeneratedQuestion['type']
+    if (typeRaw === 'multiple_choice' || typeRaw === 'mc') {
+      type = 'multiple_choice'
+    } else if (typeRaw === 'true_false' || typeRaw === 'true/false') {
+      type = 'true_false'
+    } else if (typeRaw === 'written' || typeRaw === 'short_answer') {
+      type = 'written'
+    } else {
+      continue
+    }
+
+    const stem = String(item.stem ?? item.question ?? '').trim()
+    if (!stem) continue
+
+    const question: GeneratedQuestion = {
+      id: String(item.id ?? `q${i + 1}`),
+      type,
+      stem,
+      explanation:
+        typeof item.explanation === 'string' ? item.explanation : undefined,
+    }
+
+    if (type === 'multiple_choice') {
+      const options = Array.isArray(item.options)
+        ? item.options.map((o) => String(o))
+        : []
+      if (options.length < 2) continue
+      question.options = options
+      question.correctAnswer = String(item.correctAnswer ?? item.answer ?? '')
+    } else if (type === 'true_false') {
+      question.options = ['True', 'False']
+      const answer = String(item.correctAnswer ?? item.answer ?? '').toLowerCase()
+      question.correctAnswer = answer.startsWith('t') ? 'True' : 'False'
+    } else {
+      question.rubric = String(item.rubric ?? item.correctAnswer ?? '')
+    }
+
+    questions.push(question)
+    if (questions.length >= expectedCount) break
+  }
+
+  if (questions.length === 0) {
+    throw new Error('No usable questions returned by the model')
+  }
+  return questions
+}
+
+async function generatePracticeTest(args: Record<string, unknown>) {
+  const scope = requireString(args.scope, 'scope')
+  const context = requireString(args.context, 'context')
+  const questionCount = Math.min(
+    Math.max(Number(args.questionCount ?? 5), 3),
+    15,
+  )
+  const mcPercent = Math.min(Math.max(Number(args.mcPercent ?? 60), 0), 100)
+  const mcCount = Math.round((questionCount * mcPercent) / 100)
+  const tfCount = Math.max(1, Math.round(questionCount * 0.15))
+  const writtenCount = Math.max(1, questionCount - mcCount - tfCount)
+
+  const system = `You are a paramedic education exam writer. Use ONLY the provided course material context. Do not invent protocols outside the context. Return JSON only.`
+
+  const user = `Exam scope: ${scope}
+
+Create ${questionCount} practice questions grounded ONLY in this material context:
+---
+${context.slice(0, 24000)}
+---
+
+Target mix (approximate): ${mcCount} multiple_choice, ${writtenCount} written, ${tfCount} true_false.
+
+Return JSON:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice" | "written" | "true_false",
+      "stem": "question text",
+      "options": ["A","B","C","D"],
+      "correctAnswer": "for MC/TF",
+      "rubric": "for written grading criteria",
+      "explanation": "brief teaching point"
+    }
+  ]
+}`
+
+  const content = await callXai(system, user)
+  const parsed = parseJsonObject(content)
+  const questions = normalizeQuestions(parsed.questions, questionCount)
+  return { questions, modelNotes: typeof parsed.notes === 'string' ? parsed.notes : null }
+}
+
+async function gradeWrittenAnswers(args: Record<string, unknown>) {
+  const context = requireString(args.context, 'context')
+  const itemsJson = requireString(args.itemsJson, 'itemsJson')
+  let items: unknown
+  try {
+    items = JSON.parse(itemsJson)
+  } catch {
+    throw new Error('itemsJson must be valid JSON')
+  }
+
+  const system = `You are a paramedic instructor grading short written answers. Grade ONLY against the provided course material and rubric. Return JSON only.`
+  const user = `Course material context:
+---
+${context.slice(0, 20000)}
+---
+
+Grade each item (0-100 score + brief feedback). Items JSON:
+${JSON.stringify(items).slice(0, 12000)}
+
+Return JSON:
+{
+  "grades": [
+    { "id": "q1", "score": 80, "feedback": "..." }
+  ]
+}`
+
+  const content = await callXai(system, user)
+  const parsed = parseJsonObject(content)
+  const grades = Array.isArray(parsed.grades) ? parsed.grades : []
+  return { grades }
+}
+
+export const handler = async (event: AppSyncEvent) => {
+  try {
+    const name = fieldName(event)
+    const args = event.arguments ?? {}
+    if (name === 'generatePracticeTest') {
+      return await generatePracticeTest(args)
+    }
+    if (name === 'gradeWrittenAnswers') {
+      return await gradeWrittenAnswers(args)
+    }
+    throw new Error(`Unsupported field: ${name || 'unknown'}`)
+  } catch (error) {
+    const message =
+      error instanceof Error ? redactKey(error.message) : 'Unknown error'
+    throw new Error(message)
+  }
+}

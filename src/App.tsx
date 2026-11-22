@@ -7,6 +7,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { MaterialsPage } from '@/pages/MaterialsPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
+import { PracticeTestPage } from '@/pages/PracticeTestPage'
 import { SignUpPage } from '@/pages/SignUpPage'
 
 export default function App() {
@@ -22,15 +23,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/materials" element={<MaterialsPage />} />
-              <Route
-                path="/practice"
-                element={
-                  <PlaceholderPage
-                    title="Practice Test"
-                    description="Generate and take AI practice tests (Phase 3)."
-                  />
-                }
-              />
+              <Route path="/practice" element={<PracticeTestPage />} />
               <Route
                 path="/history"
                 element={
