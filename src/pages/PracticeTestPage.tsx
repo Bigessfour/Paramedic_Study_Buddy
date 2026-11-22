@@ -13,8 +13,14 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
+import { listAllMaterials } from '@/lib/listAll'
 import { selectMaterialContext } from '@/lib/materialContext'
 import type { Schema } from '../../amplify/data/resource'
+
+function clampInt(value: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
 
 type Material = Schema['Material']['type']
 
@@ -55,8 +61,11 @@ export function PracticeTestPage() {
 
   useEffect(() => {
     void (async () => {
-      const { data } = await dataClient.models.Material.list({ limit: 200 })
-      setMaterials(data ?? [])
+      try {
+        setMaterials(await listAllMaterials())
+      } catch {
+        setMaterials([])
+      }
     })()
   }, [])
 
@@ -77,10 +86,15 @@ export function PracticeTestPage() {
       setUsedSample(selected.usedSample)
       setContextUsed(selected.context)
 
+      const safeCount = clampInt(questionCount, 3, 15, 5)
+      const safeMc = clampInt(mcPercent, 0, 100, 60)
+      setQuestionCount(safeCount)
+      setMcPercent(safeMc)
+
       const { data, errors } = await dataClient.mutations.generatePracticeTest({
         scope: scope.trim(),
-        questionCount,
-        mcPercent,
+        questionCount: safeCount,
+        mcPercent: safeMc,
         context: selected.context,
       })
       if (errors?.length) {
@@ -150,30 +164,35 @@ export function PracticeTestPage() {
           typeof data === 'string'
             ? (JSON.parse(data) as { grades?: WrittenGrade[] })
             : ((data ?? {}) as { grades?: WrittenGrade[] })
-        grades = Array.isArray(payload.grades)
-          ? payload.grades.map((g) => ({
-              id: String(g.id),
-              score: Number(g.score) || 0,
-              feedback: String(g.feedback ?? ''),
-            }))
-          : []
+        const byId = new Map<string, WrittenGrade>()
+        for (const g of Array.isArray(payload.grades) ? payload.grades : []) {
+          const id = String(g.id ?? '').trim()
+          if (!id) continue
+          const scoreNum = Number(g.score)
+          byId.set(id, {
+            id,
+            score: Number.isFinite(scoreNum)
+              ? Math.min(100, Math.max(0, Math.round(scoreNum)))
+              : 0,
+            feedback: String(g.feedback ?? ''),
+          })
+        }
+        grades = [...byId.values()]
       }
 
+      const gradeById = new Map(grades.map((g) => [g.id, g.score]))
+      const writtenScores = written.map((q) => gradeById.get(q.id) ?? 0)
       const writtenAvg =
-        grades.length > 0
-          ? grades.reduce((sum, g) => sum + g.score, 0) / grades.length
+        written.length > 0
+          ? writtenScores.reduce((sum, s) => sum + s, 0) / written.length
           : null
-      const objectiveScore =
-        objective.length > 0 ? (correct / objective.length) * 100 : null
 
-      let overall = 0
-      if (objectiveScore != null && writtenAvg != null) {
-        overall = objectiveScore * 0.6 + writtenAvg * 0.4
-      } else if (objectiveScore != null) {
-        overall = objectiveScore
-      } else if (writtenAvg != null) {
-        overall = writtenAvg
-      }
+      // Per-question contribution: each objective/written item weighs equally.
+      const totalN = objective.length + written.length
+      const overall =
+        totalN > 0
+          ? (correct * 100 + writtenScores.reduce((s, n) => s + n, 0)) / totalN
+          : 0
 
       const payloadJson = JSON.stringify({
         questions,
@@ -280,7 +299,14 @@ export function PracticeTestPage() {
                     min={3}
                     max={15}
                     value={questionCount}
-                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                    onChange={(e) =>
+                      setQuestionCount(
+                        clampInt(Number(e.target.value), 3, 15, 5),
+                      )
+                    }
+                    onBlur={() =>
+                      setQuestionCount((n) => clampInt(n, 3, 15, 5))
+                    }
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -291,7 +317,12 @@ export function PracticeTestPage() {
                     min={0}
                     max={100}
                     value={mcPercent}
-                    onChange={(e) => setMcPercent(Number(e.target.value))}
+                    onChange={(e) =>
+                      setMcPercent(clampInt(Number(e.target.value), 0, 100, 60))
+                    }
+                    onBlur={() =>
+                      setMcPercent((n) => clampInt(n, 0, 100, 60))
+                    }
                   />
                 </div>
               </div>
@@ -360,7 +391,13 @@ export function PracticeTestPage() {
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => setPhase('setup')}
+              onClick={() => {
+                setPhase('setup')
+                setQuestions([])
+                setAnswers({})
+                setWrittenGrades([])
+                setError(null)
+              }}
             >
               Cancel
             </Button>

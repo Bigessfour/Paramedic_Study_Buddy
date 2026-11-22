@@ -143,11 +143,16 @@ function normalizeQuestions(
 async function generatePracticeTest(args: Record<string, unknown>) {
   const scope = requireString(args.scope, 'scope')
   const context = requireString(args.context, 'context')
+  const rawCount = Number(args.questionCount ?? 5)
+  const rawMc = Number(args.mcPercent ?? 60)
   const questionCount = Math.min(
-    Math.max(Number(args.questionCount ?? 5), 3),
+    Math.max(Number.isFinite(rawCount) ? Math.round(rawCount) : 5, 3),
     15,
   )
-  const mcPercent = Math.min(Math.max(Number(args.mcPercent ?? 60), 0), 100)
+  const mcPercent = Math.min(
+    Math.max(Number.isFinite(rawMc) ? Math.round(rawMc) : 60, 0),
+    100,
+  )
   const mcCount = Math.round((questionCount * mcPercent) / 100)
   const tfCount = Math.max(1, Math.round(questionCount * 0.15))
   const writtenCount = Math.max(1, questionCount - mcCount - tfCount)
@@ -212,8 +217,29 @@ Return JSON:
 
   const content = await callXai(system, user)
   const parsed = parseJsonObject(content)
-  const grades = Array.isArray(parsed.grades) ? parsed.grades : []
-  return { grades }
+  return { grades: normalizeGrades(parsed.grades) }
+}
+
+function normalizeGrades(raw: unknown): Array<{
+  id: string
+  score: number
+  feedback: string
+}> {
+  if (!Array.isArray(raw)) return []
+  const byId = new Map<string, { id: string; score: number; feedback: string }>()
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const id = String(row.id ?? '').trim()
+    if (!id) continue
+    const scoreNum = Number(row.score)
+    const score = Number.isFinite(scoreNum)
+      ? Math.min(100, Math.max(0, Math.round(scoreNum)))
+      : 0
+    const feedback = String(row.feedback ?? row.comment ?? '').trim()
+    byId.set(id, { id, score, feedback })
+  }
+  return [...byId.values()]
 }
 
 export const handler = async (event: AppSyncEvent) => {

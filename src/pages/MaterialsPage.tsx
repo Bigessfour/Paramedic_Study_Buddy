@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/table'
 import { dataClient } from '@/lib/amplifyData'
 import { extractTextFromFile, isSupportedMaterial } from '@/lib/extractText'
+import { listAllMaterials } from '@/lib/listAll'
 import type { Schema } from '../../amplify/data/resource'
 
 type Material = Schema['Material']['type']
@@ -50,17 +51,15 @@ export function MaterialsPage() {
 
   const loadMaterials = useCallback(async () => {
     setError(null)
-    const { data, errors } = await dataClient.models.Material.list({
-      limit: 100,
-    })
-    if (errors?.length) {
-      setError(errors.map((e) => e.message).join('; '))
-      setMaterials([])
-    } else {
-      const sorted = [...(data ?? [])].sort((a, b) =>
+    try {
+      const data = await listAllMaterials()
+      const sorted = [...data].sort((a, b) =>
         (b.uploadedAt ?? '').localeCompare(a.uploadedAt ?? ''),
       )
       setMaterials(sorted)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load materials')
+      setMaterials([])
     }
     setLoading(false)
   }, [])

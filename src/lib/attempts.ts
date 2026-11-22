@@ -1,5 +1,5 @@
 import type { Schema } from '../../amplify/data/resource'
-import { dataClient } from '@/lib/amplifyData'
+import { listAllAttempts } from '@/lib/listAll'
 
 export type Attempt = Schema['Attempt']['type']
 
@@ -46,13 +46,11 @@ export function normalizeAttemptQuestions(raw: unknown): AttemptQuestion[] {
 }
 
 export async function listAttempts(limit = 100): Promise<Attempt[]> {
-  const { data, errors } = await dataClient.models.Attempt.list({ limit })
-  if (errors?.length) {
-    throw new Error(errors.map((e) => e.message).join('; '))
-  }
-  return [...(data ?? [])].sort((a, b) =>
+  const data = await listAllAttempts()
+  const sorted = [...data].sort((a, b) =>
     (b.completedAt ?? '').localeCompare(a.completedAt ?? ''),
   )
+  return Number.isFinite(limit) && limit > 0 ? sorted.slice(0, limit) : sorted
 }
 
 export function parseAttemptPayload(attempt: Attempt): AttemptPayload {
