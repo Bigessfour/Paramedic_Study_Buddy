@@ -242,6 +242,115 @@ function normalizeGrades(raw: unknown): Array<{
   return [...byId.values()]
 }
 
+async function tutorChat(args: Record<string, unknown>) {
+  const message = requireString(args.message, 'message')
+  const context = requireString(args.context, 'context')
+  let history: Array<{ role: string; content: string }> = []
+  if (typeof args.historyJson === 'string' && args.historyJson.trim()) {
+    try {
+      const parsed = JSON.parse(args.historyJson) as unknown
+      if (Array.isArray(parsed)) {
+        history = parsed
+          .filter((m) => m && typeof m === 'object')
+          .map((m) => {
+            const row = m as Record<string, unknown>
+            return {
+              role: String(row.role ?? 'user'),
+              content: String(row.content ?? ''),
+            }
+          })
+          .filter((m) => m.content.trim())
+          .slice(-12)
+      }
+    } catch {
+      throw new Error('historyJson must be valid JSON')
+    }
+  }
+
+  const system = `You are a paramedic study tutor. Answer ONLY using the provided course material context. If the answer is not in the context, say you cannot find it in the uploaded materials and suggest what topic to review. Be concise and clinically accurate. Return JSON only.`
+
+  const user = `Course material context:
+---
+${context.slice(0, 22000)}
+---
+
+Recent chat (oldest first):
+${JSON.stringify(history).slice(0, 8000)}
+
+Student message: ${message}
+
+Return JSON:
+{
+  "reply": "tutor response",
+  "followUps": ["optional follow-up question 1", "optional follow-up question 2"],
+  "citedTopics": ["topic labels from context if any"]
+}`
+
+  const content = await callXai(system, user)
+  const parsed = parseJsonObject(content)
+  const reply = String(parsed.reply ?? parsed.answer ?? '').trim()
+  if (!reply) throw new Error('Tutor returned an empty reply')
+  const followUps = Array.isArray(parsed.followUps)
+    ? parsed.followUps.map((f) => String(f)).filter(Boolean).slice(0, 4)
+    : []
+  const citedTopics = Array.isArray(parsed.citedTopics)
+    ? parsed.citedTopics.map((t) => String(t)).filter(Boolean).slice(0, 8)
+    : []
+  return { reply, followUps, citedTopics }
+}
+
+async function generateFlashcards(args: Record<string, unknown>) {
+  const context = requireString(args.context, 'context')
+  const rawCount = Number(args.count ?? 8)
+  const count = Math.min(
+    Math.max(Number.isFinite(rawCount) ? Math.round(rawCount) : 8, 3),
+    20,
+  )
+  const topicHint =
+    typeof args.topicHint === 'string' && args.topicHint.trim()
+      ? args.topicHint.trim()
+      : 'course material'
+
+  const system = `You are a paramedic educator creating study flashcards. Use ONLY the provided course material. Return JSON only.`
+  const user = `Topic hint: ${topicHint}
+
+Material:
+---
+${context.slice(0, 20000)}
+---
+
+Create ${count} flashcards (front = prompt, back = concise answer).
+
+Return JSON:
+{
+  "cards": [
+    { "front": "...", "back": "...", "topic": "short topic label" }
+  ]
+}`
+
+  const content = await callXai(system, user)
+  const parsed = parseJsonObject(content)
+  const raw = Array.isArray(parsed.cards) ? parsed.cards : []
+  const cards: Array<{ front: string; back: string; topic: string }> = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const front = String(row.front ?? row.question ?? '').trim()
+    const back = String(row.back ?? row.answer ?? '').trim()
+    if (!front || !back) continue
+    cards.push({
+      front,
+      back,
+      topic: String(row.topic ?? topicHint).trim() || topicHint,
+    })
+    if (cards.length >= count) break
+  }
+  if (cards.length === 0) {
+    throw new Error('No usable flashcards returned by the model')
+  }
+  return { cards }
+}
+
 export const handler = async (event: AppSyncEvent) => {
   try {
     const name = fieldName(event)
@@ -251,6 +360,12 @@ export const handler = async (event: AppSyncEvent) => {
     }
     if (name === 'gradeWrittenAnswers') {
       return await gradeWrittenAnswers(args)
+    }
+    if (name === 'tutorChat') {
+      return await tutorChat(args)
+    }
+    if (name === 'generateFlashcards') {
+      return await generateFlashcards(args)
     }
     throw new Error(`Unsupported field: ${name || 'unknown'}`)
   } catch (error) {

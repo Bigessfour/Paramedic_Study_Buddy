@@ -23,11 +23,98 @@ Cardiac basics
 - Aspirin is commonly indicated in suspected ACS when not contraindicated; follow local protocol for nitrates and analgesia.
 `
 
+const STOP = new Set([
+  'that',
+  'this',
+  'with',
+  'from',
+  'have',
+  'what',
+  'when',
+  'where',
+  'which',
+  'about',
+  'into',
+  'your',
+  'their',
+  'them',
+  'then',
+  'than',
+  'also',
+  'only',
+  'some',
+  'such',
+  'chapter',
+  'chapters',
+  'exam',
+  'test',
+  'study',
+  'topic',
+  'topics',
+])
+
+export function tokenizeQuery(scope: string): string[] {
+  return scope
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2 && !STOP.has(t))
+}
+
+function termFrequency(haystack: string, term: string): number {
+  if (!term) return 0
+  let count = 0
+  let idx = 0
+  while (idx < haystack.length) {
+    const found = haystack.indexOf(term, idx)
+    if (found < 0) break
+    count += 1
+    idx = found + term.length
+  }
+  return count
+}
+
+type ScoredChunk = {
+  material: Material
+  chunk: string
+  score: number
+  topicHint: string
+}
+
+function chunkText(text: string, size = 1200, overlap = 150): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (clean.length <= size) return [clean]
+  const parts: string[] = []
+  let start = 0
+  while (start < clean.length) {
+    const end = Math.min(clean.length, start + size)
+    parts.push(clean.slice(start, end))
+    if (end >= clean.length) break
+    start = Math.max(0, end - overlap)
+  }
+  return parts
+}
+
+function topicFromFilename(filename: string): string {
+  const chapter = filename.match(/chapter-(\d+)/i)
+  if (chapter) return `Chapter ${Number(chapter[1])}`
+  return filename.replace(/\.(md|txt|pdf|docx)$/i, '').slice(0, 60)
+}
+
+/**
+ * Improved lexical retrieval: multi-term TF scoring, filename/chapter boost,
+ * and chunk-level selection (replaces single includes() matching).
+ */
 export function selectMaterialContext(
   materials: Material[],
   scope: string,
   maxChars = 20000,
-): { context: string; usedSample: boolean; matchedCount: number } {
+): {
+  context: string
+  usedSample: boolean
+  matchedCount: number
+  topics: string[]
+  retrieval: 'enhanced-lexical' | 'sample'
+} {
   const ready = materials.filter(
     (m) => m.extractStatus === 'ready' && (m.extractedText?.trim()?.length ?? 0) > 0,
   )
@@ -37,43 +124,79 @@ export function selectMaterialContext(
       context: SAMPLE_CONTEXT,
       usedSample: true,
       matchedCount: 0,
+      topics: ['sample'],
+      retrieval: 'sample',
     }
   }
 
-  const terms = scope
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 3)
+  const terms = tokenizeQuery(scope)
+  const scored: ScoredChunk[] = []
 
-  const scored = ready
-    .map((m) => {
-      const text = m.extractedText ?? ''
-      const lower = text.toLowerCase()
-      const score =
-        terms.length === 0
-          ? text.length
-          : terms.reduce((sum, term) => sum + (lower.includes(term) ? 10 : 0), 0) +
-            Math.min(text.length / 1000, 5)
-      return { material: m, score, text }
-    })
-    .sort((a, b) => b.score - a.score)
+  for (const material of ready) {
+    const filename = (material.filename ?? '').toLowerCase()
+    const topicHint = topicFromFilename(material.filename ?? 'material')
+    const chunks = chunkText(material.extractedText ?? '')
+    for (const chunk of chunks) {
+      const lower = chunk.toLowerCase()
+      let score = 0
+      if (terms.length === 0) {
+        score = Math.min(chunk.length / 500, 8)
+      } else {
+        for (const term of terms) {
+          const tf = termFrequency(lower, term)
+          score += Math.min(tf, 8) * (term.length > 5 ? 3 : 2)
+          if (filename.includes(term)) score += 12
+        }
+      }
+      if (score > 0 || terms.length === 0) {
+        scored.push({ material, chunk, score, topicHint })
+      }
+    }
+  }
 
-  const chunks: string[] = []
+  scored.sort((a, b) => b.score - a.score)
+
+  const chunksOut: string[] = []
+  const topics = new Set<string>()
   let total = 0
   let matchedCount = 0
+  const seenMaterials = new Set<string>()
+
   for (const item of scored) {
     if (total >= maxChars) break
-    const header = `Source: ${item.material.filename}\n`
+    if (item.score <= 0 && terms.length > 0 && matchedCount > 0) continue
+    const header = `Source: ${item.material.filename} (${item.topicHint})\n`
     const remaining = maxChars - total - header.length
-    if (remaining <= 0) break
-    chunks.push(header + item.text.slice(0, remaining))
-    total += header.length + Math.min(item.text.length, remaining)
-    matchedCount += 1
+    if (remaining <= 80) break
+    chunksOut.push(header + item.chunk.slice(0, remaining))
+    total += header.length + Math.min(item.chunk.length, remaining)
+    topics.add(item.topicHint)
+    const mid = item.material.id ?? item.material.filename
+    if (mid && !seenMaterials.has(mid)) {
+      seenMaterials.add(mid)
+      matchedCount += 1
+    }
+  }
+
+  if (chunksOut.length === 0) {
+    // Fallback: take leading text from longest materials
+    const byLen = [...ready].sort(
+      (a, b) => (b.extractedText?.length ?? 0) - (a.extractedText?.length ?? 0),
+    )
+    for (const m of byLen.slice(0, 3)) {
+      const header = `Source: ${m.filename}\n`
+      const body = (m.extractedText ?? '').slice(0, Math.floor(maxChars / 3))
+      chunksOut.push(header + body)
+      topics.add(topicFromFilename(m.filename ?? 'material'))
+      matchedCount += 1
+    }
   }
 
   return {
-    context: chunks.join('\n\n---\n\n'),
+    context: chunksOut.join('\n\n---\n\n'),
     usedSample: false,
     matchedCount,
+    topics: [...topics].slice(0, 12),
+    retrieval: 'enhanced-lexical',
   }
 }

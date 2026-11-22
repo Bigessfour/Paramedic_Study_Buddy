@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Category,
   ChartComponent,
+  ColumnSeries,
   Inject,
   Legend,
   LineSeries,
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/card'
 import { attemptStats, listAttempts, type Attempt } from '@/lib/attempts'
 import { buttonVariants } from '@/components/ui/button'
+import { buildTopicBreakdown } from '@/lib/topics'
 import { cn } from 'cn'
 
 export function DashboardPage() {
@@ -48,6 +50,7 @@ export function DashboardPage() {
   }, [])
 
   const stats = attemptStats(attempts)
+  const topicBreakdown = buildTopicBreakdown(attempts)
   const chartData = [...attempts]
     .reverse()
     .slice(-12)
@@ -59,6 +62,10 @@ export function DashboardPage() {
       }),
       score: a.scorePercent ?? 0,
     }))
+  const topicChart = topicBreakdown.slice(0, 10).map((t) => ({
+    topic: t.topic.length > 18 ? `${t.topic.slice(0, 16)}…` : t.topic,
+    avgScore: t.avgScore,
+  }))
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -70,7 +77,19 @@ export function DashboardPage() {
             {user?.email ? `, ${user.email}` : ''}.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/tutor"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            Tutor
+          </Link>
+          <Link
+            to="/flashcards"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            Flashcards
+          </Link>
           <Link
             to="/history"
             className={cn(buttonVariants({ variant: 'outline' }))}
@@ -173,6 +192,72 @@ export function DashboardPage() {
                 />
               </SeriesCollectionDirective>
             </ChartComponent>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Weakness by topic</CardTitle>
+          <CardDescription>
+            Lower average scores first (from tagged practice attempts).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-muted-foreground text-sm">Loading…</p>
+          ) : topicBreakdown.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Complete a practice test to see topic performance.
+            </p>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ChartComponent
+                id="topic-weakness"
+                primaryXAxis={{
+                  valueType: 'Category',
+                  labelStyle: { size: '10px' },
+                  majorGridLines: { width: 0 },
+                }}
+                primaryYAxis={{
+                  minimum: 0,
+                  maximum: 100,
+                  interval: 20,
+                  labelFormat: '{value}%',
+                }}
+                tooltip={{ enable: true }}
+                legendSettings={{ visible: false }}
+                height="260px"
+              >
+                <Inject services={[ColumnSeries, Category, Tooltip, Legend]} />
+                <SeriesCollectionDirective>
+                  <SeriesDirective
+                    dataSource={topicChart}
+                    xName="topic"
+                    yName="avgScore"
+                    name="Avg score"
+                    type="Column"
+                  />
+                </SeriesCollectionDirective>
+              </ChartComponent>
+              <ul className="divide-border max-h-64 divide-y overflow-auto text-sm">
+                {topicBreakdown.map((t) => (
+                  <li
+                    key={t.topic}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{t.topic}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {t.attempts} attempt{t.attempts === 1 ? '' : 's'} ·{' '}
+                        {t.totalQuestions} questions
+                      </p>
+                    </div>
+                    <span className="font-mono text-sm">{t.avgScore}%</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -111,7 +111,9 @@ npm run deploy:web
 
 Creates (once) a private web bucket + CloudFront OAC distribution, syncs `dist/`, invalidates. URL prints at the end and is saved under `.amplify-hosting/` (gitignored).
 
-**Live (v1):** https://dnj53034ll3wq.cloudfront.net
+**Live:** https://dnj53034ll3wq.cloudfront.net
+
+v1.1 adds AI Tutor (`/tutor`), Flashcards with SM-2 (`/flashcards`), topic weakness on Dashboard, and enhanced lexical material retrieval for practice/tutor. No new env vars beyond existing Syncfusion + server `XAI_API_KEY`.
 
 Optional CI: [`amplify.yml`](./amplify.yml) if you later connect Amplify Hosting to GitHub.
 

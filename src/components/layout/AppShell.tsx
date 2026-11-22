@@ -5,8 +5,10 @@ import {
   ClipboardList,
   History,
   LayoutDashboard,
+  Layers,
   LogOut,
   Menu,
+  MessagesSquare,
 } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -32,6 +34,8 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/materials', label: 'Materials', icon: BookOpen },
   { to: '/practice', label: 'Practice Test', icon: ClipboardList },
+  { to: '/tutor', label: 'AI Tutor', icon: MessagesSquare },
+  { to: '/flashcards', label: 'Flashcards', icon: Layers },
   { to: '/history', label: 'History', icon: History },
 ] as const
 

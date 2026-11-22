@@ -5,11 +5,13 @@ import { AppShell } from '@/components/layout/AppShell'
 import { AttemptDetailPage } from '@/pages/AttemptDetailPage'
 import { ConfirmSignUpPage } from '@/pages/ConfirmSignUpPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { FlashcardsPage } from '@/pages/FlashcardsPage'
 import { HistoryPage } from '@/pages/HistoryPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { MaterialsPage } from '@/pages/MaterialsPage'
 import { PracticeTestPage } from '@/pages/PracticeTestPage'
 import { SignUpPage } from '@/pages/SignUpPage'
+import { TutorPage } from '@/pages/TutorPage'
 
 export default function App() {
   return (
@@ -25,6 +27,8 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/materials" element={<MaterialsPage />} />
               <Route path="/practice" element={<PracticeTestPage />} />
+              <Route path="/tutor" element={<TutorPage />} />
+              <Route path="/flashcards" element={<FlashcardsPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/history/:attemptId" element={<AttemptDetailPage />} />
             </Route>

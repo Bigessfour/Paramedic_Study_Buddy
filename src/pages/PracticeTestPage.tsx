@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listAllMaterials } from '@/lib/listAll'
 import { selectMaterialContext } from '@/lib/materialContext'
+import { inferTopicsFromScope } from '@/lib/topics'
 import type { Schema } from '../../amplify/data/resource'
 
 function clampInt(value: number, min: number, max: number, fallback: number) {
@@ -199,11 +200,21 @@ export function PracticeTestPage() {
           ? (correct * 100 + writtenScores.reduce((s, n) => s + n, 0)) / totalN
           : 0
 
+      const retrieval = selectMaterialContext(materials, scope)
+      const topics = [
+        ...new Set([
+          ...inferTopicsFromScope(scope),
+          ...retrieval.topics,
+        ]),
+      ].slice(0, 10)
+
       const payloadJson = JSON.stringify({
         questions,
         answers,
         grades,
         usedSample,
+        topics,
+        retrieval: retrieval.retrieval,
       })
 
       const { errors: saveErrors } = await dataClient.models.Attempt.create({
@@ -216,6 +227,7 @@ export function PracticeTestPage() {
         writtenTotal: written.length,
         usedSampleContext: usedSample,
         payloadJson,
+        topicsJson: JSON.stringify(topics),
         completedAt: new Date().toISOString(),
       })
       if (saveErrors?.length) {

@@ -26,7 +26,33 @@ const schema = a.schema({
       writtenTotal: a.integer().required(),
       usedSampleContext: a.boolean().required(),
       payloadJson: a.string().required(),
+      /** JSON array of topic/chapter tags for weakness analytics */
+      topicsJson: a.string(),
       completedAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  TutorThread: a
+    .model({
+      title: a.string().required(),
+      messagesJson: a.string().required(),
+      usedSampleContext: a.boolean().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  Flashcard: a
+    .model({
+      front: a.string().required(),
+      back: a.string().required(),
+      topic: a.string().required(),
+      sourceType: a.enum(['material', 'attempt', 'manual']),
+      sourceId: a.string(),
+      ease: a.float().required(),
+      intervalDays: a.float().required(),
+      repetitions: a.integer().required(),
+      dueAt: a.datetime().required(),
+      createdAt: a.datetime().required(),
     })
     .authorization((allow) => [allow.owner()]),
 
@@ -47,6 +73,28 @@ const schema = a.schema({
     .arguments({
       context: a.string().required(),
       itemsJson: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(xaiStudy)),
+
+  tutorChat: a
+    .mutation()
+    .arguments({
+      message: a.string().required(),
+      context: a.string().required(),
+      historyJson: a.string(),
+    })
+    .returns(a.json())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(xaiStudy)),
+
+  generateFlashcards: a
+    .mutation()
+    .arguments({
+      context: a.string().required(),
+      count: a.integer(),
+      topicHint: a.string(),
     })
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])
