@@ -299,6 +299,44 @@ Return JSON:
   return { reply, followUps, citedTopics }
 }
 
+async function embedQuery(args: Record<string, unknown>) {
+  const query = requireString(args.query, 'query')
+  const model =
+    process.env.EMBEDDING_MODEL || 'amazon.titan-embed-text-v2:0'
+  const region =
+    process.env.BEDROCK_REGION || process.env.AWS_REGION || 'us-east-2'
+
+  const { BedrockRuntimeClient, InvokeModelCommand } = await import(
+    '@aws-sdk/client-bedrock-runtime'
+  )
+  const client = new BedrockRuntimeClient({ region })
+  const body = JSON.stringify({
+    inputText: query.slice(0, 8000),
+    dimensions: 1024,
+    normalize: true,
+  })
+  const res = await client.send(
+    new InvokeModelCommand({
+      modelId: model,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: Buffer.from(body),
+    }),
+  )
+  const payload = JSON.parse(new TextDecoder().decode(res.body)) as {
+    embedding?: number[]
+  }
+  if (!Array.isArray(payload.embedding) || payload.embedding.length === 0) {
+    throw new Error('Bedrock returned an empty embedding')
+  }
+  return {
+    embedding: payload.embedding,
+    model,
+    provider: 'bedrock',
+    dimensions: payload.embedding.length,
+  }
+}
+
 async function generateFlashcards(args: Record<string, unknown>) {
   const context = requireString(args.context, 'context')
   const rawCount = Number(args.count ?? 8)
@@ -366,6 +404,9 @@ export const handler = async (event: AppSyncEvent) => {
     }
     if (name === 'generateFlashcards') {
       return await generateFlashcards(args)
+    }
+    if (name === 'embedQuery') {
+      return await embedQuery(args)
     }
     throw new Error(`Unsupported field: ${name || 'unknown'}`)
   } catch (error) {

@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listAllMaterials } from '@/lib/listAll'
-import { selectMaterialContext } from '@/lib/materialContext'
+import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
 import { inferTopicsFromScope } from '@/lib/topics'
 import type { Schema } from '../../amplify/data/resource'
 
@@ -24,6 +24,7 @@ function clampInt(value: number, min: number, max: number, fallback: number) {
 }
 
 type Material = Schema['Material']['type']
+type CourseChunk = Schema['CourseChunk']['type']
 
 type Question = {
   id: string
@@ -45,6 +46,7 @@ type Phase = 'setup' | 'taking' | 'results'
 
 export function PracticeTestPage() {
   const [materials, setMaterials] = useState<Material[]>([])
+  const [chunks, setChunks] = useState<CourseChunk[]>([])
   const [scope, setScope] = useState('Chapters on airway and ventilation')
   const [questionCount, setQuestionCount] = useState(5)
   const [mcPercent, setMcPercent] = useState(60)
@@ -55,6 +57,10 @@ export function PracticeTestPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [usedSample, setUsedSample] = useState(false)
   const [contextUsed, setContextUsed] = useState('')
+  const [retrievalMode, setRetrievalMode] = useState<
+    'semantic' | 'enhanced-lexical' | 'sample'
+  >('sample')
+  const [contextTopics, setContextTopics] = useState<string[]>([])
   const [writtenGrades, setWrittenGrades] = useState<WrittenGrade[]>([])
   const [mcCorrect, setMcCorrect] = useState(0)
   const [mcTotal, setMcTotal] = useState(0)
@@ -63,9 +69,15 @@ export function PracticeTestPage() {
   useEffect(() => {
     void (async () => {
       try {
-        setMaterials(await listAllMaterials())
+        const [mats, courseChunks] = await Promise.all([
+          listAllMaterials(),
+          listAllCourseChunks().catch(() => [] as CourseChunk[]),
+        ])
+        setMaterials(mats)
+        setChunks(courseChunks)
       } catch (err) {
         setMaterials([])
+        setChunks([])
         setError(
           err instanceof Error
             ? `Could not load materials: ${err.message}`
@@ -88,9 +100,11 @@ export function PracticeTestPage() {
     setError(null)
     setBusy(true)
     try {
-      const selected = selectMaterialContext(materials, scope)
+      const selected = await selectRagContext(materials, scope, chunks)
       setUsedSample(selected.usedSample)
       setContextUsed(selected.context)
+      setRetrievalMode(selected.retrieval)
+      setContextTopics(selected.topics)
 
       const safeCount = clampInt(questionCount, 3, 15, 5)
       const safeMc = clampInt(mcPercent, 0, 100, 60)
@@ -200,12 +214,8 @@ export function PracticeTestPage() {
           ? (correct * 100 + writtenScores.reduce((s, n) => s + n, 0)) / totalN
           : 0
 
-      const retrieval = selectMaterialContext(materials, scope)
       const topics = [
-        ...new Set([
-          ...inferTopicsFromScope(scope),
-          ...retrieval.topics,
-        ]),
+        ...new Set([...inferTopicsFromScope(scope), ...contextTopics]),
       ].slice(0, 10)
 
       const payloadJson = JSON.stringify({
@@ -214,7 +224,7 @@ export function PracticeTestPage() {
         grades,
         usedSample,
         topics,
-        retrieval: retrieval.retrieval,
+        retrieval: retrievalMode,
       })
 
       const { errors: saveErrors } = await dataClient.models.Attempt.create({

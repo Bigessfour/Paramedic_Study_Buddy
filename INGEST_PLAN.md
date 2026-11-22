@@ -127,11 +127,13 @@ No always-on AWS OCR (Textract) unless local OCR fails quality checks — keeps 
 
 ## Success criteria
 
-- [ ] 100% of Tier A–G files appear in `manifest.jsonl` with status `ok` or `ok-partial` + reason
-- [ ] Every chapter 1–53 has a `by-chapter/chapter-XX.md` with non-empty Tier A or B content
-- [ ] OCR applied to low-density PDF/PPTX pages (not blanket OCR on good digital PDFs)
-- [ ] App Materials shows ingested items; Practice Test no longer falls back to sample notes when chapter scope matches
-- [ ] Raw pack never committed; secrets never printed
+- [x] 100% of Tier A–G files appear in `manifest.jsonl` with status `ok` or `ok-partial` + reason
+- [x] Every chapter 1–53 has a `by-chapter/chapter-XX.md` with non-empty Tier A or B content
+- [x] OCR applied to low-density PDF/PPTX pages (not blanket OCR on good digital PDFs)
+- [x] App Materials shows ingested items; Practice Test no longer falls back to sample notes when chapter scope matches
+- [x] Raw pack never committed; secrets never printed
+
+Verified locally: 351/351 ok, 0 needsOcr, 53 chapter bundles (see `course-context/qc-report.json`).
 
 ---
 

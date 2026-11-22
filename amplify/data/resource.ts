@@ -56,6 +56,20 @@ const schema = a.schema({
     })
     .authorization((allow) => [allow.owner()]),
 
+  /** RAG chunk + embedding vector (owner-isolated). Full chapter text stays in S3. */
+  CourseChunk: a
+    .model({
+      chapter: a.string().required(),
+      source: a.string().required(),
+      tier: a.string(),
+      text: a.string().required(),
+      embeddingJson: a.string().required(),
+      charStart: a.integer(),
+      charEnd: a.integer(),
+      chunkKey: a.string().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
   generatePracticeTest: a
     .mutation()
     .arguments({
@@ -95,6 +109,16 @@ const schema = a.schema({
       context: a.string().required(),
       count: a.integer(),
       topicHint: a.string(),
+    })
+    .returns(a.json())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(xaiStudy)),
+
+  /** Returns a query embedding vector for client-side cosine RAG. */
+  embedQuery: a
+    .mutation()
+    .arguments({
+      query: a.string().required(),
     })
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])

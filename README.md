@@ -74,13 +74,20 @@ npm run dev
 npm run build
 ```
 
-### Course pack (local → AWS text only)
+### Course pack (local → AWS + RAG)
+
+Status checklist: [`RAG_STATUS.md`](./RAG_STATUS.md).
 
 ```bash
 npm run ingest:course:ocr    # PDF/DOCX/PPTX → course-context/ (Vision OCR on Mac)
+AWS_PROFILE=steve-copilot npm run embed:course   # Bedrock Titan → embeddings/chunks.jsonl
 # set INGEST_EMAIL / INGEST_PASSWORD in .env.local (Cognito user)
-npm run upload:course        # S3 text + chapter Material rows
+npm run upload:course        # S3 text + Material rows + CourseChunk embeddings
+# text-only re-run: npm run upload:course -- --skip-embeddings
+# embeddings only:  npm run upload:course -- --embeddings-only
 ```
+
+Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-d) for both batch embed and query-time `embedQuery`. Practice/Tutor prefer semantic retrieval when `CourseChunk` rows exist; keyword fallback otherwise.
 
 ---
 
@@ -93,6 +100,8 @@ See [`.env.example`](./.env.example). Never commit real keys.
 | `VITE_SYNCFUSION_LICENSE`          | Client build            | Community license; registered at startup |
 | `XAI_API_KEY`                      | Amplify Function secret | Server-only; never `VITE_`               |
 | `INGEST_EMAIL` / `INGEST_PASSWORD` | Local scripts only      | Cognito user for course-pack upload      |
+| `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` | Local embed + Lambda | Default `bedrock` + Titan v2             |
+| `BEDROCK_REGION`                   | Local embed + Lambda    | Default `us-east-2`                      |
 | `amplify_outputs.json`             | Client build            | From `sandbox:once` (gitignored)         |
 
 Self-sign-up is enabled (Cognito email/password). Classmates each get their own materials and attempts via owner authorization.

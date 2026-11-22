@@ -13,10 +13,11 @@ import {
 import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listAllMaterials } from '@/lib/listAll'
-import { selectMaterialContext } from '@/lib/materialContext'
+import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
 import type { Schema } from '../../amplify/data/resource'
 
 type Material = Schema['Material']['type']
+type CourseChunk = Schema['CourseChunk']['type']
 type TutorThread = Schema['TutorThread']['type']
 
 type ChatMessage = {
@@ -47,6 +48,7 @@ function parseMessages(json: string): ChatMessage[] {
 
 export function TutorPage() {
   const [materials, setMaterials] = useState<Material[]>([])
+  const [chunks, setChunks] = useState<CourseChunk[]>([])
   const [threads, setThreads] = useState<TutorThread[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -71,7 +73,12 @@ export function TutorPage() {
   useEffect(() => {
     void (async () => {
       try {
-        setMaterials(await listAllMaterials())
+        const [mats, courseChunks] = await Promise.all([
+          listAllMaterials(),
+          listAllCourseChunks().catch(() => [] as CourseChunk[]),
+        ])
+        setMaterials(mats)
+        setChunks(courseChunks)
         await loadThreads()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load tutor')
@@ -101,7 +108,7 @@ export function TutorPage() {
     setBusy(true)
     setError(null)
     try {
-      const selected = selectMaterialContext(materials, text)
+      const selected = await selectRagContext(materials, text, chunks)
       setUsedSample(selected.usedSample)
 
       const nextMessages: ChatMessage[] = [

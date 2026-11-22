@@ -22,11 +22,13 @@ The course pack is RAG-ready when all of the following are true:
 
 ## Checklist
 
-- [ ] Local ingest QC green (manifest + chapters 1–53)
-- [ ] Embeddings written under `course-context/embeddings/` (gitignored)
-- [ ] Upload pushes text + `CourseChunk` rows for the Cognito owner
-- [ ] Practice uses semantic retrieval when chunks exist; keyword fallback otherwise
-- [ ] README + `.env.example` document commands and embedding env
+- [x] Local ingest QC green (manifest + chapters 1–53) — 351 ok, 0 needsOcr, 53 chapters
+- [x] Embeddings written under `course-context/embeddings/` (gitignored) — 3127 chunks
+- [x] Upload pushes text + `CourseChunk` rows for the Cognito owner
+- [x] Practice uses semantic retrieval when chunks exist; keyword fallback otherwise (`src/lib/ragContext.ts`)
+- [x] README + `.env.example` document commands and embedding env
+
+**Embedding provider:** Bedrock Titan Embed Text v2 (`amazon.titan-embed-text-v2:0`, us-east-2). xAI `/v1/embeddings` returned 404.
 
 ---
 
