@@ -8,6 +8,8 @@ Multi-tenant practice-test app for paramedic coursework. Students upload course 
 
 Phased build plan: see [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
 
+> Study aid only — not a substitute for official course materials, protocols, or certification exams.
+
 ---
 
 ## Project Definition of Done (v1 — Ship When This Is True)
@@ -34,21 +36,21 @@ Anything beyond this is v1.1+. Do not keep polishing once the above is green.
 
 ```bash
 npm install
-cp .env.example .env.local   # Syncfusion / local secrets only
-cp amplify_outputs.stub.json amplify_outputs.json   # until sandbox generates real outputs
+cp .env.example .env.local   # Syncfusion + optional ingest creds
+# amplify_outputs.json comes from sandbox (gitignored)
 ```
 
-Auth backend (personal AWS account `570912405222`):
+Auth / data / storage / xAI Lambda (personal AWS `570912405222`):
 
 ```bash
-export AWS_PROFILE=steve          # personal bigessfour; fallback: steve-copilot
+export AWS_PROFILE=steve-copilot   # or steve when that profile works
 export AWS_REGION=us-east-2
-npm run sandbox:once              # deploy once, then exit (no watcher)
+npm run sandbox:once               # deploy once, then exit (no watcher)
 ```
 
-Cost posture: Cognito + on-demand AppSync/DynamoDB + S3 + Lambda (xAI calls). Use `--once` so nothing watches continuously. Docker Desktop may be required once to bundle Lambda. When idle: `npx ampx sandbox delete --profile steve`.
+Cost posture: Cognito + on-demand AppSync/DynamoDB/S3/Lambda. Prefer **local** extract/OCR (`npm run ingest:course:ocr`) then `npm run upload:course` — do not run Textract. Use `--once` so nothing watches continuously.
 
-xAI: set sandbox secret from `.env.local` (never commit keys):
+xAI secret (never commit):
 
 ```bash
 # reads XAI_API_KEY from .env.local without printing it
@@ -56,37 +58,61 @@ python3 - <<'PY'
 from pathlib import Path
 import os, subprocess
 key = next(l.split("=",1)[1].strip() for l in Path(".env.local").read_text().splitlines() if l.startswith("XAI_API_KEY="))
-subprocess.run(["npx","ampx","sandbox","secret","set","XAI_API_KEY","--profile","steve"], input=key+"\n", text=True, check=True, env={**os.environ, "AWS_PROFILE":"steve","AWS_REGION":"us-east-2"})
+subprocess.run(["npx","ampx","sandbox","secret","set","XAI_API_KEY","--profile",os.environ.get("AWS_PROFILE","steve-copilot")], input=key+"\n", text=True, check=True)
 print("secret set")
 PY
 ```
 
-Then:
-
 ```bash
 npm run dev
+npm run build
 ```
 
-Build check:
+### Course pack (local → AWS text only)
 
 ```bash
-npm run build
-npm run lint
+npm run ingest:course:ocr    # PDF/DOCX/PPTX → course-context/ (Vision OCR on Mac)
+# set INGEST_EMAIL / INGEST_PASSWORD in .env.local (Cognito user)
+npm run upload:course        # S3 text + chapter Material rows
 ```
+
+---
 
 ## Environment variables
 
 See [`.env.example`](./.env.example). Never commit real keys.
 
-- **Client (`VITE_*`):** Cognito/Amplify public config, Syncfusion license.
-- **Server only:** `XAI_API_KEY` — must not use a `VITE_` prefix; keep it on an Amplify Function / backend.
+| Name | Where | Notes |
+|------|--------|--------|
+| `VITE_SYNCFUSION_LICENSE` | Client build | Community license; registered at startup |
+| `XAI_API_KEY` | Amplify Function secret | Server-only; never `VITE_` |
+| `INGEST_EMAIL` / `INGEST_PASSWORD` | Local scripts only | Cognito user for course-pack upload |
+| `amplify_outputs.json` | Client build | From `sandbox:once` (gitignored) |
 
-## Deploy
+Self-sign-up is enabled (Cognito email/password). Classmates each get their own materials and attempts via owner authorization.
 
-Amplify Hosting / S3 + CloudFront steps will be documented in Phase 5.
+---
+
+## Deploy (S3 + CloudFront)
+
+Build on this machine, push static assets (no Amplify Hosting builder required):
+
+```bash
+export AWS_PROFILE=steve-copilot
+export AWS_REGION=us-east-2
+npm run deploy:web
+```
+
+Creates (once) a private web bucket + CloudFront OAC distribution, syncs `dist/`, invalidates. URL prints at the end and is saved under `.amplify-hosting/` (gitignored).
+
+**Live (v1):** https://dnj53034ll3wq.cloudfront.net
+
+Optional CI: [`amplify.yml`](./amplify.yml) if you later connect Amplify Hosting to GitHub.
+
+---
 
 ## License notes
 
-- **Syncfusion:** Community License — register the key from `VITE_SYNCFUSION_LICENSE` at app startup (Phase 4).
+- **Syncfusion:** Community License — `VITE_SYNCFUSION_LICENSE` at app startup.
 - **xAI:** Server-side `XAI_API_KEY` only. Never ship the key in the browser bundle.
 - This is a study aid, not a substitute for official course materials or certification exams.

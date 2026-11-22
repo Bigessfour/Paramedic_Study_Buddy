@@ -17,10 +17,15 @@ dist-ssr
 
 # Amplify / AWS local artifacts
 .amplify/
+.amplify-hosting/
 amplify_outputs.json
 amplifyconfiguration.json
 amplifyconfiguration.dart
 aws-exports.js
+
+# Copyrighted course pack + local extract outputs (do not commit)
+Paramedic Book/
+course-context/
 
 # Editor directories and files
 .vscode/*

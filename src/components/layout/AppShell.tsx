@@ -141,6 +141,10 @@ export function AppShell() {
         <main className="flex-1 overflow-auto p-4 md:p-6">
           <Outlet />
         </main>
+        <footer className="border-border text-muted-foreground border-t px-4 py-3 text-xs">
+          Study aid only — not a substitute for official course materials,
+          protocols, or certification exams.
+        </footer>
       </div>
     </div>
   )

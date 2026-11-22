@@ -55,7 +55,7 @@ export function PracticeTestPage() {
 
   useEffect(() => {
     void (async () => {
-      const { data } = await dataClient.models.Material.list({ limit: 100 })
+      const { data } = await dataClient.models.Material.list({ limit: 200 })
       setMaterials(data ?? [])
     })()
   }, [])
