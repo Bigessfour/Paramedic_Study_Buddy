@@ -44,7 +44,7 @@ Create the initial project structure for a React + Vite + TypeScript + shadcn/ui
    - Multi-tenant rules (Cognito custom attribute or group for tenant/user isolation)
    - Syncfusion license registration pattern
    - xAI API usage rules (never hardcode keys)
-5. Create .env.example with placeholders for VITE_XAI_API_KEY, Amplify config, Syncfusion license.
+5. Create .env.example with placeholders for server-side XAI_API_KEY (never VITE_), Amplify config, Syncfusion license.
 6. Commit with message: "chore: initial scaffold and definition of done"
 
 Do not add features yet. Stop when the above files exist and the project builds.

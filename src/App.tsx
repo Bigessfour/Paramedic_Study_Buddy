@@ -1,5 +1,3 @@
-import { Button } from '@/components/ui/button'
-
 function App() {
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-8">
@@ -10,7 +8,6 @@ function App() {
         Practice-test scaffold. Auth, materials, and generation land in later
         phases.
       </p>
-      <Button type="button">Get started</Button>
     </main>
   )
 }

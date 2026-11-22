@@ -15,6 +15,13 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Amplify / AWS local artifacts
+.amplify/
+amplify_outputs.json
+amplifyconfiguration.json
+amplifyconfiguration.dart
+aws-exports.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

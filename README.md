@@ -42,11 +42,15 @@ Build check:
 
 ```bash
 npm run build
+npm run lint
 ```
 
 ## Environment variables
 
-See [`.env.example`](./.env.example). Never commit real keys. Syncfusion and xAI credentials belong in env only.
+See [`.env.example`](./.env.example). Never commit real keys.
+
+- **Client (`VITE_*`):** Cognito/Amplify public config, Syncfusion license.
+- **Server only:** `XAI_API_KEY` — must not use a `VITE_` prefix; keep it on an Amplify Function / backend.
 
 ## Deploy
 
@@ -55,5 +59,5 @@ Amplify Hosting / S3 + CloudFront steps will be documented in Phase 5.
 ## License notes
 
 - **Syncfusion:** Community License — register the key from `VITE_SYNCFUSION_LICENSE` at app startup (Phase 4).
-- **xAI:** API key via `VITE_XAI_API_KEY` (or a server-side proxy in later hardening). Never hardcode.
+- **xAI:** Server-side `XAI_API_KEY` only. Never ship the key in the browser bundle.
 - This is a study aid, not a substitute for official course materials or certification exams.

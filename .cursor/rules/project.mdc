@@ -1,9 +1,14 @@
+---
+description: Paramedic Study Buddy stack, DoD, multi-tenant, and secret rules
+alwaysApply: true
+---
+
 # Paramedic Study Buddy — Project Rules
 
 ## Stack (locked)
 
 - React + Vite + TypeScript
-- shadcn/ui + Tailwind CSS
+- shadcn/ui + Tailwind CSS (`shadcn` package stays in dependencies for theme CSS; add components with `npx shadcn@latest add …`)
 - Selective Syncfusion (Community License) for Grid/Charts
 - AWS Amplify (Cognito auth, Storage/S3, Hosting)
 - xAI (Grok) for practice-test generation and written-answer grading
@@ -33,15 +38,16 @@ Work one phase at a time from `PHASED_WORKFLOW.md`. Do not expand scope into lat
 
 ## xAI API
 
-- Read the key from environment (`VITE_XAI_API_KEY` or a backend secret later).
+- Keep the API key **server-side only** (`XAI_API_KEY` on an Amplify Function / backend). Never expose it via `VITE_*` or any client bundle.
 - Never hardcode keys, never commit `.env` / `.env.local`, never log the full key.
+- The SPA calls your backend; the backend calls xAI.
 - Prompts must instruct the model to stay within the user’s uploaded course material.
 - Prefer structured JSON responses for questions and grading feedback.
 
 ## Secrets & env
 
-- Use `.env.example` as the contract; real values live only in local `.env.local` or Amplify hosting env.
-- Do not commit Amplify outputs that contain secrets.
+- Use `.env.example` as the contract; real values live only in local `.env.local` or Amplify hosting / function env.
+- Do not commit Amplify outputs that contain secrets. Ignore `.amplify/` sandbox artifacts.
 
 ## AWS account
 
