@@ -211,3 +211,23 @@ Do not start feature implementation until this Definition of Done is committed. 
 - Syncfusion license key and xAI key stay in environment variables only.
 
 v1 (Phases 0–5) is shipped. Work Phase 6 against the v1.1 Definition of Done above; then stop.
+
+---
+
+## Course pack RAG (embeddings)
+
+Status and checklist: [`RAG_STATUS.md`](./RAG_STATUS.md).
+
+### Definition of Done — course pack RAG-ready
+
+The course pack is RAG-ready when all of the following are true:
+
+1. `Paramedic Book/` has been processed by `scripts/ingest-course-pack.mjs` (with `--ocr` where needed) and `course-context/` contains manifests + by-chapter text for chapters 1–53.
+2. Text artifacts are uploaded to private S3 under the user’s identity prefix via the existing upload script (or an updated version).
+3. An embedding pipeline exists that chunks the course text, generates embeddings (xAI or a lightweight compatible model), and stores them in a queryable form (DynamoDB + S3, or a simple vector-friendly structure).
+4. Practice-test generation and any future tutor can retrieve relevant chunks via semantic search (not only keyword matching).
+5. Fallback to the existing keyword path remains available if embeddings are missing.
+6. README documents the ingest + embed + upload steps and required env vars.
+7. Existing v1 flows (auth, materials UI, practice tests, history) still work.
+
+Commit the Definition of Done before heavy embedding work. When it is met, stop (do not expand into unrelated features in the same pass).
