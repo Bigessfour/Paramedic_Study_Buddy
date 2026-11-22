@@ -53,6 +53,6 @@ Work one phase at a time from `PHASED_WORKFLOW.md`. Do not expand scope into lat
 
 Deploy to the personal AWS account `570912405222` (Amplify Hosting / S3 + CloudFront). Confirm caller identity before mutating cloud resources.
 
-Until `steve` / `bigessfour` is restored, use profile `steve-copilot` for Amplify sandbox deploys. Prefer `ampx sandbox --once` (no long-running watcher). Avoid always-on compute (EC2, NAT, RDS). Cognito / S3 / Lambda on-demand only.
+Prefer profile `steve` (`bigessfour`). Fallback: `steve-copilot`. Prefer `ampx sandbox --once` (no long-running watcher). Avoid always-on compute (EC2, NAT, RDS). Cognito / S3 / AppSync/DynamoDB on-demand only.
 
-Tear down idle sandboxes: `npx ampx sandbox delete --profile steve-copilot`.
+Tear down idle sandboxes: `npx ampx sandbox delete --profile steve`.
