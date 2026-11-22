@@ -28,7 +28,13 @@ The app is done when all of the following are true:
 7. Basic error handling and empty states exist. No critical console errors on the happy path.
 8. A short README exists with: how to run locally, how to deploy, required env vars, and license notes (Syncfusion + xAI).
 
-Anything beyond this is v1.1+. Do not keep polishing once the above is green.
+v1 is shipped. Further work is Phase 6 (v1.1) in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
+
+### Definition of Done — v1.1 (condensed)
+
+Ship when: AI Tutor chat uses user materials (or labeled sample context); flashcards generate from material/attempt with basic SM-2 review; Dashboard shows topic/chapter performance; practice tests use improved retrieval; new data is user-isolated; empty/error states exist; README covers any new setup; v1 flows still build and work.
+
+Full checklist and Phase 6 scope: see **Phase 6** and **Definition of Done — v1.1** in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
 
 ---
 

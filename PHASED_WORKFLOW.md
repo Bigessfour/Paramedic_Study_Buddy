@@ -159,6 +159,49 @@ Once this is done, stop. Do not add new features.
 
 ---
 
+## Phase 6 — AI Tutor, Flashcards & Weakness Analytics (v1.1)
+
+**Done when:** The Definition of Done — v1.1 below is green.
+
+### Scope
+
+- **Conversational AI Tutor** grounded in the user’s uploaded materials (chat that explains concepts, clarifies wrong answers, and generates follow-up questions while staying within course context).
+- **Flashcard generation + simple spaced repetition** from materials or completed attempts; basic SM-2-style scheduling is sufficient.
+- **Weakness analytics by topic** — tag questions/attempts and show performance breakdown on the Dashboard.
+- **Improved material retrieval** — upgrade context selection beyond simple keyword matching (enhanced lexical scoring or embeddings).
+- Optional lightweight clinical scenario mode only if time remains after the above.
+
+### Out of scope for v1.1
+
+Full CAT simulator, leaderboards, image-based ECG questions, class-wide shared materials, Anki export, and other polish beyond the bullets above.
+
+### Cursor Prompt 6
+```
+Implement Phase 6 (v1.1) for Paramedic Study Buddy after the Definition of Done — v1.1 is committed.
+
+Order: improved retrieval → AI Tutor → flashcards + SM-2 → weakness analytics on Dashboard.
+Extend Amplify Data (owner-scoped) and the existing xAI Lambda. Prefer shadcn UI; Syncfusion charts only where useful.
+Never hard-code API keys. Stay within Phase 6 scope.
+Final commit: "feat: v1.1 AI tutor, flashcards, and weakness analytics"
+```
+
+### Definition of Done — v1.1 (Ship When This Is True)
+
+The v1.1 features are done when all of the following are true:
+
+1. Authenticated user can open an AI Tutor chat that answers questions using only the user’s uploaded materials as context (or clearly labeled sample context when none exist).
+2. User can generate flashcards from a material or a completed attempt and review them with a basic spaced-repetition schedule.
+3. Dashboard (or a dedicated view) shows performance broken down by topic/chapter with at least a simple list or chart.
+4. Practice-test generation uses the improved retrieval path when materials are available.
+5. All new data (tutor threads, flashcards, topic tags) is user-isolated.
+6. Basic error handling and empty states exist for the new screens.
+7. README is updated with any new env vars or setup steps.
+8. The app still builds and the existing v1 flows (auth, materials, practice test, history) continue to work.
+
+Do not start feature implementation until this Definition of Done is committed. When it is met, stop.
+
+---
+
 ## Usage Notes for Cursor
 
 - Paste one phase prompt at a time.
@@ -167,4 +210,4 @@ Once this is done, stop. Do not add new features.
 - If Cursor starts adding extra features, reply: “Stay within the current phase. Do not expand scope.”
 - Syncfusion license key and xAI key stay in environment variables only.
 
-When all phases are green, the project is shipped. Open a v1.1 milestone for later improvements (better retrieval, more question types, spaced repetition, etc.).
+v1 (Phases 0–5) is shipped. Work Phase 6 against the v1.1 Definition of Done above; then stop.
