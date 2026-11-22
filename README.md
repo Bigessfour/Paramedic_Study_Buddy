@@ -40,15 +40,13 @@ cp amplify_outputs.stub.json amplify_outputs.json   # until sandbox generates re
 
 Auth backend (personal AWS account `570912405222`):
 
-Until `steve` / `bigessfour` login is fixed, use `steve-copilot`:
-
 ```bash
-export AWS_PROFILE=steve-copilot
+export AWS_PROFILE=steve          # personal bigessfour; fallback: steve-copilot
 export AWS_REGION=us-east-2
-npm run sandbox:once    # deploy Cognito once, then exit (no watcher)
+npm run sandbox:once              # deploy once, then exit (no watcher)
 ```
 
-Cost posture: Cognito only (pay-per-use / free tier). Use `--once` so nothing watches continuously. When idle for a while, tear down with `npx ampx sandbox delete --profile steve-copilot`.
+Cost posture: Cognito + on-demand AppSync/DynamoDB + S3 only. Use `--once` so nothing watches continuously. When idle for a while: `npx ampx sandbox delete --profile steve`.
 
 Then:
 

@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmSignUpPage } from '@/pages/ConfirmSignUpPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
+import { MaterialsPage } from '@/pages/MaterialsPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { SignUpPage } from '@/pages/SignUpPage'
 
@@ -20,15 +21,7 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<DashboardPage />} />
-              <Route
-                path="/materials"
-                element={
-                  <PlaceholderPage
-                    title="Materials"
-                    description="Upload course PDFs and DOCX files (Phase 2)."
-                  />
-                }
-              />
+              <Route path="/materials" element={<MaterialsPage />} />
               <Route
                 path="/practice"
                 element={
