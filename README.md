@@ -76,7 +76,7 @@ npm run build
 
 ### Course pack (local → AWS + RAG)
 
-Status checklist: [`RAG_STATUS.md`](./RAG_STATUS.md).
+Status checklist: [`RAG_STATUS.md`](./RAG_STATUS.md). Live verification log: [`VERIFY_V1.1.md`](./VERIFY_V1.1.md).
 
 ```bash
 npm run ingest:course:ocr    # PDF/DOCX/PPTX → course-context/ (Vision OCR on Mac)

@@ -54,8 +54,12 @@ export function TutorPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [contextLoading, setContextLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [usedSample, setUsedSample] = useState(false)
+  const [retrievalMode, setRetrievalMode] = useState<
+    'semantic' | 'enhanced-lexical' | 'sample'
+  >('sample')
   const [followUps, setFollowUps] = useState<string[]>([])
 
   async function loadThreads() {
@@ -72,16 +76,20 @@ export function TutorPage() {
 
   useEffect(() => {
     void (async () => {
+      setContextLoading(true)
       try {
-        const [mats, courseChunks] = await Promise.all([
-          listAllMaterials(),
-          listAllCourseChunks().catch(() => [] as CourseChunk[]),
-        ])
+        const mats = await listAllMaterials()
         setMaterials(mats)
-        setChunks(courseChunks)
         await loadThreads()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load tutor')
+      }
+      try {
+        setChunks(await listAllCourseChunks())
+      } catch {
+        setChunks([])
+      } finally {
+        setContextLoading(false)
       }
     })()
   }, [])
@@ -110,6 +118,7 @@ export function TutorPage() {
     try {
       const selected = await selectRagContext(materials, text, chunks)
       setUsedSample(selected.usedSample)
+      setRetrievalMode(selected.retrieval)
 
       const nextMessages: ChatMessage[] = [
         ...messages,
@@ -245,7 +254,11 @@ export function TutorPage() {
               {usedSample ? (
                 <Badge variant="outline">Sample context</Badge>
               ) : (
-                <Badge variant="secondary">Your materials</Badge>
+                <Badge variant="secondary">
+                  {retrievalMode === 'semantic'
+                    ? 'Semantic retrieval'
+                    : 'Your materials'}
+                </Badge>
               )}
             </div>
           </CardHeader>
@@ -300,8 +313,15 @@ export function TutorPage() {
                 placeholder="Explain junctional rhythms…"
                 disabled={busy}
               />
-              <Button type="submit" disabled={busy || !input.trim()}>
-                {busy ? 'Thinking…' : 'Send'}
+              <Button
+                type="submit"
+                disabled={busy || contextLoading || !input.trim()}
+              >
+                {contextLoading
+                  ? 'Loading context…'
+                  : busy
+                    ? 'Thinking…'
+                    : 'Send'}
               </Button>
             </form>
           </CardFooter>

@@ -52,6 +52,7 @@ export function PracticeTestPage() {
   const [mcPercent, setMcPercent] = useState(60)
   const [phase, setPhase] = useState<Phase>('setup')
   const [busy, setBusy] = useState(false)
+  const [contextLoading, setContextLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
@@ -68,21 +69,26 @@ export function PracticeTestPage() {
 
   useEffect(() => {
     void (async () => {
+      setContextLoading(true)
       try {
-        const [mats, courseChunks] = await Promise.all([
-          listAllMaterials(),
-          listAllCourseChunks().catch(() => [] as CourseChunk[]),
-        ])
+        // Load materials first so generate never races into sample notes
+        // while CourseChunk pagination (large embeddings) is still in flight.
+        const mats = await listAllMaterials()
         setMaterials(mats)
-        setChunks(courseChunks)
       } catch (err) {
         setMaterials([])
-        setChunks([])
         setError(
           err instanceof Error
             ? `Could not load materials: ${err.message}`
             : 'Could not load materials',
         )
+      }
+      try {
+        setChunks(await listAllCourseChunks())
+      } catch {
+        setChunks([])
+      } finally {
+        setContextLoading(false)
       }
     })()
   }, [])
@@ -270,7 +276,15 @@ export function PracticeTestPage() {
         </p>
       </div>
 
-      {readyCount === 0 ? (
+      {contextLoading ? (
+        <Alert>
+          <AlertTitle>Loading course context…</AlertTitle>
+          <AlertDescription>
+            Materials load first; embeddings may take a moment for semantic
+            retrieval.
+          </AlertDescription>
+        </Alert>
+      ) : readyCount === 0 ? (
         <Alert>
           <AlertTitle>No textbook materials yet</AlertTitle>
           <AlertDescription>
@@ -280,10 +294,14 @@ export function PracticeTestPage() {
         </Alert>
       ) : (
         <Alert>
-          <AlertTitle>{readyCount} material(s) ready</AlertTitle>
+          <AlertTitle>
+            {readyCount} material(s) ready
+            {chunks.length > 0 ? ` · ${chunks.length} RAG chunks` : ''}
+          </AlertTitle>
           <AlertDescription>
-            Relevant extracted text will be selected from your uploads for this
-            scope.
+            {chunks.length > 0
+              ? 'Semantic retrieval will be preferred; keyword matching is the fallback.'
+              : 'Relevant extracted text will be selected from your uploads for this scope.'}
           </AlertDescription>
         </Alert>
       )}
@@ -355,8 +373,12 @@ export function PracticeTestPage() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" disabled={busy}>
-                {busy ? 'Generating…' : 'Generate practice test'}
+              <Button type="submit" disabled={busy || contextLoading}>
+                {contextLoading
+                  ? 'Loading context…'
+                  : busy
+                    ? 'Generating…'
+                    : 'Generate practice test'}
               </Button>
             </CardFooter>
           </form>
@@ -368,7 +390,11 @@ export function PracticeTestPage() {
           {usedSample ? (
             <Badge variant="outline">Using sample context</Badge>
           ) : (
-            <Badge variant="secondary">Using your materials</Badge>
+            <Badge variant="secondary">
+              {retrievalMode === 'semantic'
+                ? 'Semantic retrieval'
+                : 'Using your materials'}
+            </Badge>
           )}
           {questions.map((q, index) => (
             <Card key={q.id}>
