@@ -82,12 +82,12 @@ npm run upload:course        # S3 text + chapter Material rows
 
 See [`.env.example`](./.env.example). Never commit real keys.
 
-| Name | Where | Notes |
-|------|--------|--------|
-| `VITE_SYNCFUSION_LICENSE` | Client build | Community license; registered at startup |
-| `XAI_API_KEY` | Amplify Function secret | Server-only; never `VITE_` |
-| `INGEST_EMAIL` / `INGEST_PASSWORD` | Local scripts only | Cognito user for course-pack upload |
-| `amplify_outputs.json` | Client build | From `sandbox:once` (gitignored) |
+| Name                               | Where                   | Notes                                    |
+| ---------------------------------- | ----------------------- | ---------------------------------------- |
+| `VITE_SYNCFUSION_LICENSE`          | Client build            | Community license; registered at startup |
+| `XAI_API_KEY`                      | Amplify Function secret | Server-only; never `VITE_`               |
+| `INGEST_EMAIL` / `INGEST_PASSWORD` | Local scripts only      | Cognito user for course-pack upload      |
+| `amplify_outputs.json`             | Client build            | From `sandbox:once` (gitignored)         |
 
 Self-sign-up is enabled (Cognito email/password). Classmates each get their own materials and attempts via owner authorization.
 

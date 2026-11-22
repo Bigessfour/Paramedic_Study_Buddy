@@ -117,13 +117,13 @@ export function AttemptDetailPage() {
                       : ''}
                 </CardDescription>
                 <CardTitle className="text-base font-medium leading-snug">
-                  {q.prompt}
+                  {q.stem}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                {q.choices?.length ? (
+                {q.options?.length ? (
                   <ul className="text-muted-foreground list-disc space-y-1 pl-5">
-                    {q.choices.map((c) => (
+                    {q.options.map((c) => (
                       <li key={c}>{c}</li>
                     ))}
                   </ul>
@@ -142,6 +142,9 @@ export function AttemptDetailPage() {
                   <p>
                     Written score {grade.score}/100 — {grade.feedback}
                   </p>
+                ) : null}
+                {q.explanation ? (
+                  <p className="text-muted-foreground">{q.explanation}</p>
                 ) : null}
               </CardContent>
             </Card>

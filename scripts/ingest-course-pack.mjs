@@ -12,7 +12,6 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import mammoth from 'mammoth'
@@ -20,7 +19,6 @@ import JSZip from 'jszip'
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 const execFileAsync = promisify(execFile)
-const require = createRequire(import.meta.url)
 
 const ROOT = process.cwd()
 const SOURCE_DIR = path.join(ROOT, 'Paramedic Book')

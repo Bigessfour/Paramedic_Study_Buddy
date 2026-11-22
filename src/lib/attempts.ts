@@ -3,17 +3,46 @@ import { dataClient } from '@/lib/amplifyData'
 
 export type Attempt = Schema['Attempt']['type']
 
+export type AttemptQuestion = {
+  id: string
+  type: string
+  /** Canonical field from xAI / PracticeTestPage */
+  stem: string
+  options?: string[]
+  correctAnswer?: string
+  explanation?: string
+}
+
 export type AttemptPayload = {
-  questions?: Array<{
-    id: string
-    type: string
-    prompt: string
-    choices?: string[]
-    correctAnswer?: string
-  }>
+  questions?: AttemptQuestion[]
   answers?: Record<string, string>
   grades?: Array<{ id: string; score: number; feedback: string }>
   usedSample?: boolean
+}
+
+/** Normalize older prompt/choices payloads and current stem/options. */
+export function normalizeAttemptQuestions(raw: unknown): AttemptQuestion[] {
+  if (!Array.isArray(raw)) return []
+  const out: AttemptQuestion[] = []
+  raw.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return
+    const q = item as Record<string, unknown>
+    const stem = String(q.stem ?? q.prompt ?? q.question ?? '').trim()
+    if (!stem) return
+    const optionsRaw = q.options ?? q.choices
+    const question: AttemptQuestion = {
+      id: String(q.id ?? `q-${index + 1}`),
+      type: String(q.type ?? 'multiple_choice'),
+      stem,
+    }
+    if (Array.isArray(optionsRaw)) {
+      question.options = optionsRaw.map((o) => String(o))
+    }
+    if (q.correctAnswer != null) question.correctAnswer = String(q.correctAnswer)
+    if (q.explanation != null) question.explanation = String(q.explanation)
+    out.push(question)
+  })
+  return out
 }
 
 export async function listAttempts(limit = 100): Promise<Attempt[]> {
@@ -28,7 +57,13 @@ export async function listAttempts(limit = 100): Promise<Attempt[]> {
 
 export function parseAttemptPayload(attempt: Attempt): AttemptPayload {
   try {
-    return JSON.parse(attempt.payloadJson || '{}') as AttemptPayload
+    const parsed = JSON.parse(attempt.payloadJson || '{}') as AttemptPayload & {
+      questions?: unknown
+    }
+    return {
+      ...parsed,
+      questions: normalizeAttemptQuestions(parsed.questions),
+    }
   } catch {
     return {}
   }

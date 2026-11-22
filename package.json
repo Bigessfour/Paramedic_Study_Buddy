@@ -13,6 +13,7 @@
     "ingest:course": "node scripts/ingest-course-pack.mjs",
     "ingest:course:ocr": "node scripts/ingest-course-pack.mjs --ocr",
     "upload:course": "node scripts/upload-course-context.mjs",
+    "deploy": "bash scripts/deploy-web.sh",
     "deploy:web": "bash scripts/deploy-web.sh"
   },
   "dependencies": {
