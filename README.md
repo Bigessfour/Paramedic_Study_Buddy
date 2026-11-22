@@ -34,7 +34,25 @@ Anything beyond this is v1.1+. Do not keep polishing once the above is green.
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in values as phases add integrations
+cp .env.example .env.local   # Syncfusion / local secrets only
+cp amplify_outputs.stub.json amplify_outputs.json   # until sandbox generates real outputs
+```
+
+Auth backend (personal AWS account `570912405222`):
+
+Until `steve` / `bigessfour` login is fixed, use `steve-copilot`:
+
+```bash
+export AWS_PROFILE=steve-copilot
+export AWS_REGION=us-east-2
+npm run sandbox:once    # deploy Cognito once, then exit (no watcher)
+```
+
+Cost posture: Cognito only (pay-per-use / free tier). Use `--once` so nothing watches continuously. When idle for a while, tear down with `npx ampx sandbox delete --profile steve-copilot`.
+
+Then:
+
+```bash
 npm run dev
 ```
 
