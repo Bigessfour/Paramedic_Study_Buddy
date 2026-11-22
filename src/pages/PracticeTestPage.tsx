@@ -63,8 +63,13 @@ export function PracticeTestPage() {
     void (async () => {
       try {
         setMaterials(await listAllMaterials())
-      } catch {
+      } catch (err) {
         setMaterials([])
+        setError(
+          err instanceof Error
+            ? `Could not load materials: ${err.message}`
+            : 'Could not load materials',
+        )
       }
     })()
   }, [])
@@ -432,20 +437,25 @@ export function PracticeTestPage() {
 
           {questions.map((q) => {
             const grade = writtenGrades.find((g) => g.id === q.id)
-            const given = answers[q.id] ?? ''
+            const given = (answers[q.id] ?? '').trim()
+            const expected = (q.correctAnswer ?? '').trim()
+            const isObjective =
+              q.type === 'multiple_choice' || q.type === 'true_false'
             const objectiveOk =
-              (q.type === 'multiple_choice' || q.type === 'true_false') &&
-              given.toLowerCase() === (q.correctAnswer ?? '').toLowerCase()
+              isObjective &&
+              Boolean(given) &&
+              Boolean(expected) &&
+              given.toLowerCase() === expected.toLowerCase()
             return (
               <Card key={q.id}>
                 <CardHeader>
                   <CardTitle className="text-base">{q.stem}</CardTitle>
                   <CardDescription>
                     Your answer: {given || '—'}
-                    {q.type !== 'written' ? (
+                    {isObjective ? (
                       <>
                         {' '}
-                        · Correct: {q.correctAnswer}{' '}
+                        · Correct: {expected || '—'}{' '}
                         <Badge variant={objectiveOk ? 'secondary' : 'destructive'}>
                           {objectiveOk ? 'Correct' : 'Incorrect'}
                         </Badge>
