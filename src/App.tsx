@@ -10,6 +10,8 @@ import { HistoryPage } from '@/pages/HistoryPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { MaterialsPage } from '@/pages/MaterialsPage'
 import { PracticeTestPage } from '@/pages/PracticeTestPage'
+import { ProgressPage } from '@/pages/ProgressPage'
+import { ReviewPage } from '@/pages/ReviewPage'
 import { SignUpPage } from '@/pages/SignUpPage'
 import { TutorPage } from '@/pages/TutorPage'
 
@@ -29,6 +31,8 @@ export default function App() {
               <Route path="/practice" element={<PracticeTestPage />} />
               <Route path="/tutor" element={<TutorPage />} />
               <Route path="/flashcards" element={<FlashcardsPage />} />
+              <Route path="/progress" element={<ProgressPage />} />
+              <Route path="/review" element={<ReviewPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/history/:attemptId" element={<AttemptDetailPage />} />
             </Route>

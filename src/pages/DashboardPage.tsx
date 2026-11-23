@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/card'
 import { attemptStats, listAttempts, type Attempt } from '@/lib/attempts'
 import { buttonVariants } from '@/components/ui/button'
-import { buildTopicBreakdown } from '@/lib/topics'
+import { buildTopicBreakdown, weakTopicsScope } from '@/lib/topics'
 import { cn } from 'cn'
 
 export function DashboardPage() {
@@ -66,6 +66,10 @@ export function DashboardPage() {
     topic: t.topic.length > 18 ? `${t.topic.slice(0, 16)}…` : t.topic,
     avgScore: t.avgScore,
   }))
+  const weakScope = weakTopicsScope(topicBreakdown)
+  const weakPracticeTo = weakScope
+    ? `/practice?scope=${encodeURIComponent(weakScope)}&source=weakness`
+    : null
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -78,6 +82,18 @@ export function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            to="/review"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            Review today
+          </Link>
+          <Link
+            to="/progress"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            Progress
+          </Link>
           <Link
             to="/tutor"
             className={cn(buttonVariants({ variant: 'outline' }))}
@@ -96,6 +112,21 @@ export function DashboardPage() {
           >
             History
           </Link>
+          {weakPracticeTo ? (
+            <Link to={weakPracticeTo} className={cn(buttonVariants({ variant: 'secondary' }))}>
+              Practice my weak topics
+            </Link>
+          ) : (
+            <span
+              className={cn(
+                buttonVariants({ variant: 'secondary' }),
+                'pointer-events-none opacity-50',
+              )}
+              title="Complete a practice test to unlock weakness practice"
+            >
+              Practice my weak topics
+            </span>
+          )}
           <Link to="/practice" className={cn(buttonVariants())}>
             Practice test
           </Link>

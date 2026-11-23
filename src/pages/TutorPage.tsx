@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,6 +15,10 @@ import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listAllMaterials } from '@/lib/listAll'
 import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
+import {
+  consumeTutorExplainSeed,
+  formatExplainPrompt,
+} from '@/lib/tutorSeed'
 import type { Schema } from '../../amplify/data/resource'
 
 type Material = Schema['Material']['type']
@@ -47,6 +52,7 @@ function parseMessages(json: string): ChatMessage[] {
 }
 
 export function TutorPage() {
+  const [searchParams] = useSearchParams()
   const [materials, setMaterials] = useState<Material[]>([])
   const [chunks, setChunks] = useState<CourseChunk[]>([])
   const [threads, setThreads] = useState<TutorThread[]>([])
@@ -61,6 +67,12 @@ export function TutorPage() {
     'semantic' | 'enhanced-lexical' | 'sample'
   >('sample')
   const [followUps, setFollowUps] = useState<string[]>([])
+  const materialsRef = useRef<Material[]>([])
+  const chunksRef = useRef<CourseChunk[]>([])
+  const explainStarted = useRef(false)
+
+  materialsRef.current = materials
+  chunksRef.current = chunks
 
   async function loadThreads() {
     const { data, errors } = await dataClient.models.TutorThread.list({
@@ -72,6 +84,93 @@ export function TutorPage() {
     )
     setThreads(sorted)
     return sorted
+  }
+
+  async function sendMessage(
+    text: string,
+    prior: ChatMessage[],
+    threadId: string | null,
+  ) {
+    const selected = await selectRagContext(
+      materialsRef.current,
+      text,
+      chunksRef.current,
+    )
+    setUsedSample(selected.usedSample)
+    setRetrievalMode(selected.retrieval)
+
+    const nextMessages: ChatMessage[] = [
+      ...prior,
+      { role: 'user', content: text, at: new Date().toISOString() },
+    ]
+    setMessages(nextMessages)
+    setInput('')
+
+    const { data, errors } = await dataClient.mutations.tutorChat({
+      message: text,
+      context: selected.context,
+      historyJson: JSON.stringify(
+        nextMessages.slice(0, -1).map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      ),
+    })
+    if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+
+    const payload =
+      typeof data === 'string'
+        ? (JSON.parse(data) as {
+            reply?: string
+            followUps?: string[]
+          })
+        : ((data ?? {}) as { reply?: string; followUps?: string[] })
+
+    const reply = String(payload.reply ?? '').trim()
+    if (!reply) throw new Error('Empty tutor reply')
+
+    const withAssistant: ChatMessage[] = [
+      ...nextMessages,
+      {
+        role: 'assistant',
+        content: reply,
+        at: new Date().toISOString(),
+      },
+    ]
+    setMessages(withAssistant)
+    setFollowUps(
+      Array.isArray(payload.followUps)
+        ? payload.followUps.map(String).filter(Boolean)
+        : [],
+    )
+
+    const title =
+      text.length > 48 ? `${text.slice(0, 45)}…` : text || 'Tutor chat'
+    const messagesJson = JSON.stringify(withAssistant)
+    const updatedAt = new Date().toISOString()
+
+    if (threadId) {
+      const { errors: upErr } = await dataClient.models.TutorThread.update({
+        id: threadId,
+        messagesJson,
+        usedSampleContext: selected.usedSample,
+        updatedAt,
+      })
+      if (upErr?.length) throw new Error(upErr.map((e) => e.message).join('; '))
+    } else {
+      const { data: created, errors: createErr } =
+        await dataClient.models.TutorThread.create({
+          title,
+          messagesJson,
+          usedSampleContext: selected.usedSample,
+          updatedAt,
+        })
+      if (createErr?.length) {
+        throw new Error(createErr.map((e) => e.message).join('; '))
+      }
+      setActiveId(created?.id ?? null)
+    }
+    await loadThreads()
   }
 
   useEffect(() => {
@@ -93,6 +192,25 @@ export function TutorPage() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (contextLoading || explainStarted.current) return
+    if (searchParams.get('explain') !== '1') return
+    const seed = consumeTutorExplainSeed()
+    if (!seed) return
+    explainStarted.current = true
+    const prompt = formatExplainPrompt(seed)
+    setBusy(true)
+    setError(null)
+    setActiveId(null)
+    setMessages([])
+    setFollowUps([])
+    void sendMessage(prompt, [], null)
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Tutor request failed')
+      })
+      .finally(() => setBusy(false))
+  }, [contextLoading, searchParams])
 
   function openThread(thread: TutorThread) {
     setActiveId(thread.id ?? null)
@@ -116,82 +234,7 @@ export function TutorPage() {
     setBusy(true)
     setError(null)
     try {
-      const selected = await selectRagContext(materials, text, chunks)
-      setUsedSample(selected.usedSample)
-      setRetrievalMode(selected.retrieval)
-
-      const nextMessages: ChatMessage[] = [
-        ...messages,
-        { role: 'user', content: text, at: new Date().toISOString() },
-      ]
-      setMessages(nextMessages)
-      setInput('')
-
-      const { data, errors } = await dataClient.mutations.tutorChat({
-        message: text,
-        context: selected.context,
-        historyJson: JSON.stringify(
-          nextMessages.slice(0, -1).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        ),
-      })
-      if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
-
-      const payload =
-        typeof data === 'string'
-          ? (JSON.parse(data) as {
-              reply?: string
-              followUps?: string[]
-            })
-          : ((data ?? {}) as { reply?: string; followUps?: string[] })
-
-      const reply = String(payload.reply ?? '').trim()
-      if (!reply) throw new Error('Empty tutor reply')
-
-      const withAssistant: ChatMessage[] = [
-        ...nextMessages,
-        {
-          role: 'assistant',
-          content: reply,
-          at: new Date().toISOString(),
-        },
-      ]
-      setMessages(withAssistant)
-      setFollowUps(
-        Array.isArray(payload.followUps)
-          ? payload.followUps.map(String).filter(Boolean)
-          : [],
-      )
-
-      const title =
-        text.length > 48 ? `${text.slice(0, 45)}…` : text || 'Tutor chat'
-      const messagesJson = JSON.stringify(withAssistant)
-      const updatedAt = new Date().toISOString()
-
-      if (activeId) {
-        const { errors: upErr } = await dataClient.models.TutorThread.update({
-          id: activeId,
-          messagesJson,
-          usedSampleContext: selected.usedSample,
-          updatedAt,
-        })
-        if (upErr?.length) throw new Error(upErr.map((e) => e.message).join('; '))
-      } else {
-        const { data: created, errors: createErr } =
-          await dataClient.models.TutorThread.create({
-            title,
-            messagesJson,
-            usedSampleContext: selected.usedSample,
-            updatedAt,
-          })
-        if (createErr?.length) {
-          throw new Error(createErr.map((e) => e.message).join('; '))
-        }
-        setActiveId(created?.id ?? null)
-      }
-      await loadThreads()
+      await sendMessage(text, messages, activeId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tutor request failed')
     } finally {

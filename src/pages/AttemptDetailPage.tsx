@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { dataClient } from '@/lib/amplifyData'
 import {
   parseAttemptPayload,
@@ -7,21 +7,29 @@ import {
   type AttemptPayload,
 } from '@/lib/attempts'
 import {
+  attemptToMarkdown,
+  copyText,
+  downloadText,
+} from '@/lib/exportAttempt'
+import { saveTutorExplainSeed } from '@/lib/tutorSeed'
+import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from 'cn'
 
 export function AttemptDetailPage() {
   const { attemptId } = useParams<{ attemptId: string }>()
+  const navigate = useNavigate()
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   const [payload, setPayload] = useState<AttemptPayload>({})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [exportMsg, setExportMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (!attemptId) return
@@ -56,6 +64,46 @@ export function AttemptDetailPage() {
     (payload.grades ?? []).map((g) => [g.id, g] as const),
   )
 
+  function exportMarkdown() {
+    if (!attempt) return
+    return attemptToMarkdown(attempt, payload)
+  }
+
+  async function onCopy() {
+    const md = exportMarkdown()
+    if (!md) return
+    try {
+      await copyText(md)
+      setExportMsg('Copied Markdown to clipboard')
+    } catch {
+      setExportMsg('Could not copy — try Download instead')
+    }
+  }
+
+  function onDownload() {
+    const md = exportMarkdown()
+    if (!md || !attempt) return
+    const stamp = (attempt.completedAt ?? 'attempt').slice(0, 10)
+    downloadText(`attempt-${stamp}.md`, md)
+    setExportMsg('Download started')
+  }
+
+  function explainMissed(opts: {
+    stem: string
+    userAnswer: string
+    correctAnswer?: string
+    rubric?: string
+    explanation?: string
+  }) {
+    if (!attempt) return
+    saveTutorExplainSeed({
+      ...opts,
+      scope: attempt.scope,
+      attemptId: attempt.id ?? undefined,
+    })
+    navigate('/tutor?explain=1')
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -65,15 +113,24 @@ export function AttemptDetailPage() {
             {attempt?.scope ?? (loading ? 'Loading…' : '—')}
           </p>
         </div>
-        <Link
-          to="/history"
-          className={cn(buttonVariants({ variant: 'outline' }))}
-        >
-          Back to history
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}>
+            Copy Markdown
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={onDownload}>
+            Download .md
+          </Button>
+          <Link
+            to="/history"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            Back to history
+          </Link>
+        </div>
       </div>
 
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
+      {exportMsg ? <p className="text-muted-foreground text-sm">{exportMsg}</p> : null}
 
       {attempt ? (
         <Card>
@@ -89,8 +146,20 @@ export function AttemptDetailPage() {
                 ? ` · Written avg ${attempt.writtenAvgScore ?? '—'}`
                 : ''}
               {attempt.usedSampleContext ? ' · sample context' : ''}
+              {payload.mode ? ` · ${payload.mode}` : ''}
             </CardDescription>
           </CardHeader>
+        </Card>
+      ) : null}
+
+      {payload.vignette ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Vignette</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap text-sm">{payload.vignette}</p>
+          </CardContent>
         </Card>
       ) : null}
 
@@ -104,6 +173,9 @@ export function AttemptDetailPage() {
               ? answer.trim().toLowerCase() ===
                 String(q.correctAnswer).trim().toLowerCase()
               : null
+          const writtenMiss =
+            !isObjective && grade != null && grade.score < 70
+          const missed = correct === false || writtenMiss
 
           return (
             <Card key={q.id}>
@@ -114,7 +186,9 @@ export function AttemptDetailPage() {
                     ? ' · correct'
                     : correct === false
                       ? ' · incorrect'
-                      : ''}
+                      : writtenMiss
+                        ? ' · needs review'
+                        : ''}
                 </CardDescription>
                 <CardTitle className="text-base font-medium leading-snug">
                   {q.stem}
@@ -145,6 +219,23 @@ export function AttemptDetailPage() {
                 ) : null}
                 {q.explanation ? (
                   <p className="text-muted-foreground">{q.explanation}</p>
+                ) : null}
+                {missed ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() =>
+                      explainMissed({
+                        stem: q.stem,
+                        userAnswer: answer,
+                        correctAnswer: q.correctAnswer,
+                        explanation: q.explanation,
+                      })
+                    }
+                  >
+                    Explain this
+                  </Button>
                 ) : null}
               </CardContent>
             </Card>

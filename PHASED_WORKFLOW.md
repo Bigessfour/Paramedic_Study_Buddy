@@ -210,13 +210,13 @@ Do not start feature implementation until this Definition of Done is committed. 
 - If Cursor starts adding extra features, reply: “Stay within the current phase. Do not expand scope.”
 - Syncfusion license key and xAI key stay in environment variables only.
 
-v1 (Phases 0–5) and Phase 6 (v1.1) are shipped. Course-pack RAG is shipped. Work Phase 7 against the v1.2 Definition of Done below; then stop.
+v1 (Phases 0–5), Phase 6 (v1.1), course-pack RAG, and Phase 7 (v1.2) are shipped. Stop here unless opening a new milestone.
 
 ---
 
 ## Phase 7 — Daily Use Features (v1.2)
 
-**Done when:** The Definition of Done — v1.2 below is green.
+**Status:** Shipped (v1.2 DoD below).
 
 ### Scope
 

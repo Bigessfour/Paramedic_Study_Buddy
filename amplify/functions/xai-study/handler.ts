@@ -513,6 +513,58 @@ Return JSON:
   return { cards }
 }
 
+async function generateClinicalScenario(args: Record<string, unknown>) {
+  const scope = requireString(args.scope, 'scope')
+  const context = requireString(args.context, 'context')
+
+  const system = `You are a paramedic clinical educator. Create ONE lightweight scenario grounded ONLY in the provided course material. Return JSON only.`
+  const user = `Scope: ${scope}
+
+Course material context:
+---
+${context.slice(0, 24000)}
+---
+
+Return JSON:
+{
+  "vignette": "2-5 sentence patient/scene presentation",
+  "steps": [
+    {
+      "id": "s1",
+      "prompt": "What is your next assessment or action?",
+      "expectedPoints": "Key points for grading this short answer"
+    }
+  ]
+}
+
+Provide 3 to 5 ordered steps. Keep prompts answerable in 1-3 sentences.`
+
+  const content = await callXai(system, user)
+  const parsed = parseJsonObject(content)
+  const vignette = String(parsed.vignette ?? '').trim()
+  const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : []
+  const steps: Array<{ id: string; prompt: string; expectedPoints: string }> =
+    []
+  for (const [index, item] of rawSteps.entries()) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const prompt = String(row.prompt ?? row.question ?? '').trim()
+    if (!prompt) continue
+    steps.push({
+      id: String(row.id ?? `s${index + 1}`).trim() || `s${index + 1}`,
+      prompt,
+      expectedPoints: String(
+        row.expectedPoints ?? row.rubric ?? row.points ?? '',
+      ).trim(),
+    })
+    if (steps.length >= 5) break
+  }
+  if (!vignette || steps.length === 0) {
+    throw new Error('Model returned an incomplete clinical scenario')
+  }
+  return { vignette, steps }
+}
+
 export const handler = async (event: AppSyncEvent) => {
   try {
     const name = fieldName(event)
@@ -528,6 +580,9 @@ export const handler = async (event: AppSyncEvent) => {
     }
     if (name === 'generateFlashcards') {
       return await generateFlashcards(args)
+    }
+    if (name === 'generateClinicalScenario') {
+      return await generateClinicalScenario(args)
     }
     if (name === 'embedQuery') {
       return await embedQuery(args)

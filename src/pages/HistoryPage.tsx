@@ -9,7 +9,17 @@ import {
   Page,
   Sort,
 } from '@syncfusion/ej2-react-grids'
-import { listAttempts, type Attempt } from '@/lib/attempts'
+import { Button } from '@/components/ui/button'
+import {
+  listAttempts,
+  parseAttemptPayload,
+  type Attempt,
+} from '@/lib/attempts'
+import {
+  attemptToMarkdown,
+  copyText,
+  downloadText,
+} from '@/lib/exportAttempt'
 
 type Row = {
   id: string
@@ -38,15 +48,20 @@ function toRows(attempts: Attempt[]): Row[] {
 export function HistoryPage() {
   const navigate = useNavigate()
   const [rows, setRows] = useState<Row[]>([])
+  const [attempts, setAttempts] = useState<Attempt[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [exportMsg, setExportMsg] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const attempts = await listAttempts(100)
-        if (!cancelled) setRows(toRows(attempts))
+        const list = await listAttempts(100)
+        if (!cancelled) {
+          setAttempts(list)
+          setRows(toRows(list))
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load history')
@@ -60,14 +75,41 @@ export function HistoryPage() {
     }
   }, [])
 
+  async function exportLatest() {
+    const latest = attempts[0]
+    if (!latest) return
+    const md = attemptToMarkdown(latest, parseAttemptPayload(latest))
+    try {
+      await copyText(md)
+      setExportMsg('Latest attempt copied as Markdown')
+    } catch {
+      downloadText(`attempt-latest.md`, md)
+      setExportMsg('Download started for latest attempt')
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">History</h1>
-        <p className="text-muted-foreground text-sm">
-          Past practice tests for your account only. Click a row for detail.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">History</h1>
+          <p className="text-muted-foreground text-sm">
+            Past practice tests for your account only. Click a row for detail.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={attempts.length === 0}
+          onClick={() => void exportLatest()}
+        >
+          Copy latest as Markdown
+        </Button>
       </div>
+      {exportMsg ? (
+        <p className="text-muted-foreground text-sm">{exportMsg}</p>
+      ) : null}
 
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
       {loading ? (

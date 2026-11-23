@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   BookOpen,
+  CalendarCheck,
+  ChartColumn,
   ClipboardList,
   History,
   LayoutDashboard,
@@ -34,6 +36,8 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/materials', label: 'Materials', icon: BookOpen },
   { to: '/practice', label: 'Practice Test', icon: ClipboardList },
+  { to: '/review', label: 'Review today', icon: CalendarCheck },
+  { to: '/progress', label: 'Progress', icon: ChartColumn },
   { to: '/tutor', label: 'AI Tutor', icon: MessagesSquare },
   { to: '/flashcards', label: 'Flashcards', icon: Layers },
   { to: '/history', label: 'History', icon: History },

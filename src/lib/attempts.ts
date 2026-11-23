@@ -18,6 +18,11 @@ export type AttemptPayload = {
   answers?: Record<string, string>
   grades?: Array<{ id: string; score: number; feedback: string }>
   usedSample?: boolean
+  mode?: 'practice' | 'exam' | 'scenario'
+  examMode?: boolean
+  timeLimitMinutes?: number
+  elapsedSeconds?: number
+  vignette?: string
 }
 
 /** Normalize older prompt/choices payloads and current stem/options. */

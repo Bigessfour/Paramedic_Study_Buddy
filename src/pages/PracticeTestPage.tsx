@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,12 @@ type Question = {
   explanation?: string
 }
 
+type ScenarioStep = {
+  id: string
+  prompt: string
+  expectedPoints?: string
+}
+
 type WrittenGrade = {
   id: string
   score: number
@@ -43,13 +50,18 @@ type WrittenGrade = {
 }
 
 type Phase = 'setup' | 'taking' | 'results'
+type PracticeMode = 'practice' | 'scenario'
 
 export function PracticeTestPage() {
+  const [searchParams] = useSearchParams()
   const [materials, setMaterials] = useState<Material[]>([])
   const [chunks, setChunks] = useState<CourseChunk[]>([])
   const [scope, setScope] = useState('Chapters on airway and ventilation')
   const [questionCount, setQuestionCount] = useState(5)
   const [mcPercent, setMcPercent] = useState(60)
+  const [examMode, setExamMode] = useState(false)
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(0)
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>('practice')
   const [phase, setPhase] = useState<Phase>('setup')
   const [busy, setBusy] = useState(false)
   const [contextLoading, setContextLoading] = useState(true)
@@ -66,13 +78,27 @@ export function PracticeTestPage() {
   const [mcCorrect, setMcCorrect] = useState(0)
   const [mcTotal, setMcTotal] = useState(0)
   const [scorePercent, setScorePercent] = useState(0)
+  const [vignette, setVignette] = useState('')
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const autoSubmitRef = useRef(false)
+  const submitRef = useRef<(() => Promise<void>) | null>(null)
+
+  useEffect(() => {
+    const scopeParam = searchParams.get('scope')
+    if (scopeParam?.trim()) setScope(scopeParam.trim())
+    const modeParam = searchParams.get('mode')
+    if (modeParam === 'scenario') setPracticeMode('scenario')
+    const countParam = searchParams.get('count')
+    if (countParam) {
+      setQuestionCount(clampInt(Number(countParam), 3, 15, 5))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     void (async () => {
       setContextLoading(true)
       try {
-        // Load materials first so generate never races into sample notes
-        // while CourseChunk pagination (large embeddings) is still in flight.
         const mats = await listAllMaterials()
         setMaterials(mats)
       } catch (err) {
@@ -101,16 +127,164 @@ export function PracticeTestPage() {
     [materials],
   )
 
+  useEffect(() => {
+    if (phase !== 'taking' || !examMode || !timeLimitMinutes || secondsLeft == null) {
+      return
+    }
+    if (secondsLeft <= 0) {
+      if (!autoSubmitRef.current) {
+        autoSubmitRef.current = true
+        void submitRef.current?.()
+      }
+      return
+    }
+    const id = window.setTimeout(() => {
+      setSecondsLeft((s) => (s == null ? s : s - 1))
+    }, 1000)
+    return () => window.clearTimeout(id)
+  }, [phase, examMode, timeLimitMinutes, secondsLeft])
+
+  async function gradeWritten(
+    written: Question[],
+    context: string,
+  ): Promise<WrittenGrade[]> {
+    if (written.length === 0) return []
+    const items = written.map((q) => ({
+      id: q.id,
+      stem: q.stem,
+      rubric: q.rubric ?? '',
+      answer: answers[q.id] ?? '',
+    }))
+    const { data, errors } = await dataClient.mutations.gradeWrittenAnswers({
+      context,
+      itemsJson: JSON.stringify(items),
+    })
+    if (errors?.length) {
+      throw new Error(errors.map((e) => e.message).join('; '))
+    }
+    const payload =
+      typeof data === 'string'
+        ? (JSON.parse(data) as { grades?: WrittenGrade[] })
+        : ((data ?? {}) as { grades?: WrittenGrade[] })
+    const byId = new Map<string, WrittenGrade>()
+    for (const g of Array.isArray(payload.grades) ? payload.grades : []) {
+      const id = String(g.id ?? '').trim()
+      if (!id) continue
+      const scoreNum = Number(g.score)
+      byId.set(id, {
+        id,
+        score: Number.isFinite(scoreNum)
+          ? Math.min(100, Math.max(0, Math.round(scoreNum)))
+          : 0,
+        feedback: String(g.feedback ?? ''),
+      })
+    }
+    return [...byId.values()]
+  }
+
+  async function finishAttempt(opts: {
+    questions: Question[]
+    grades: WrittenGrade[]
+    correct: number
+    objectiveCount: number
+    overall: number
+    writtenAvg: number | null
+    writtenCount: number
+    mode: 'practice' | 'exam' | 'scenario'
+    vignetteText?: string
+  }) {
+    const topics = [
+      ...new Set([...inferTopicsFromScope(scope), ...contextTopics]),
+    ].slice(0, 10)
+    const elapsedSeconds =
+      startedAt != null ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : undefined
+
+    const payloadJson = JSON.stringify({
+      questions: opts.questions,
+      answers,
+      grades: opts.grades,
+      usedSample,
+      topics,
+      retrieval: retrievalMode,
+      mode: opts.mode,
+      examMode: examMode || opts.mode === 'exam',
+      timeLimitMinutes: timeLimitMinutes > 0 ? timeLimitMinutes : undefined,
+      elapsedSeconds,
+      vignette: opts.vignetteText,
+    })
+
+    const { errors: saveErrors } = await dataClient.models.Attempt.create({
+      scope: scope.trim(),
+      questionCount: opts.questions.length,
+      scorePercent: Math.round(opts.overall * 10) / 10,
+      mcCorrect: opts.correct,
+      mcTotal: opts.objectiveCount,
+      writtenAvgScore: opts.writtenAvg ?? undefined,
+      writtenTotal: opts.writtenCount,
+      usedSampleContext: usedSample,
+      payloadJson,
+      topicsJson: JSON.stringify(topics),
+      completedAt: new Date().toISOString(),
+    })
+    if (saveErrors?.length) {
+      throw new Error(saveErrors.map((e) => e.message).join('; '))
+    }
+
+    setMcCorrect(opts.correct)
+    setMcTotal(opts.objectiveCount)
+    setWrittenGrades(opts.grades)
+    setScorePercent(Math.round(opts.overall * 10) / 10)
+    setPhase('results')
+  }
+
   async function onGenerate(event: FormEvent) {
     event.preventDefault()
     setError(null)
     setBusy(true)
+    autoSubmitRef.current = false
     try {
       const selected = await selectRagContext(materials, scope, chunks)
       setUsedSample(selected.usedSample)
       setContextUsed(selected.context)
       setRetrievalMode(selected.retrieval)
       setContextTopics(selected.topics)
+
+      if (practiceMode === 'scenario') {
+        const { data, errors } = await dataClient.mutations.generateClinicalScenario({
+          scope: scope.trim(),
+          context: selected.context,
+        })
+        if (errors?.length) {
+          throw new Error(errors.map((e) => e.message).join('; '))
+        }
+        const payload =
+          typeof data === 'string'
+            ? (JSON.parse(data) as {
+                vignette?: string
+                steps?: ScenarioStep[]
+              })
+            : ((data ?? {}) as { vignette?: string; steps?: ScenarioStep[] })
+        const steps = Array.isArray(payload.steps) ? payload.steps : []
+        if (steps.length === 0) {
+          throw new Error('No scenario steps were generated. Try a broader scope.')
+        }
+        const nextQuestions: Question[] = steps.map((s, i) => ({
+          id: String(s.id || `s${i + 1}`),
+          type: 'written',
+          stem: String(s.prompt ?? '').trim(),
+          rubric: String(s.expectedPoints ?? '').trim() || undefined,
+        }))
+        setVignette(String(payload.vignette ?? '').trim())
+        setQuestions(nextQuestions)
+        setAnswers({})
+        setWrittenGrades([])
+        setStartedAt(Date.now())
+        setSecondsLeft(
+          examMode && timeLimitMinutes > 0 ? timeLimitMinutes * 60 : null,
+        )
+        setPhase('taking')
+        return
+      }
 
       const safeCount = clampInt(questionCount, 3, 15, 5)
       const safeMc = clampInt(mcPercent, 0, 100, 60)
@@ -139,9 +313,14 @@ export function PracticeTestPage() {
         throw new Error('No questions were generated. Try a broader scope.')
       }
 
+      setVignette('')
       setQuestions(nextQuestions)
       setAnswers({})
       setWrittenGrades([])
+      setStartedAt(Date.now())
+      setSecondsLeft(
+        examMode && timeLimitMinutes > 0 ? timeLimitMinutes * 60 : null,
+      )
       setPhase('taking')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
@@ -150,8 +329,7 @@ export function PracticeTestPage() {
     }
   }
 
-  async function onSubmitTest(event: FormEvent) {
-    event.preventDefault()
+  async function onSubmitTest() {
     setError(null)
     setBusy(true)
     try {
@@ -171,41 +349,7 @@ export function PracticeTestPage() {
       }
 
       const written = questions.filter((q) => q.type === 'written')
-      let grades: WrittenGrade[] = []
-      if (written.length > 0) {
-        const items = written.map((q) => ({
-          id: q.id,
-          stem: q.stem,
-          rubric: q.rubric ?? '',
-          answer: answers[q.id] ?? '',
-        }))
-        const { data, errors } = await dataClient.mutations.gradeWrittenAnswers({
-          context: contextUsed,
-          itemsJson: JSON.stringify(items),
-        })
-        if (errors?.length) {
-          throw new Error(errors.map((e) => e.message).join('; '))
-        }
-        const payload =
-          typeof data === 'string'
-            ? (JSON.parse(data) as { grades?: WrittenGrade[] })
-            : ((data ?? {}) as { grades?: WrittenGrade[] })
-        const byId = new Map<string, WrittenGrade>()
-        for (const g of Array.isArray(payload.grades) ? payload.grades : []) {
-          const id = String(g.id ?? '').trim()
-          if (!id) continue
-          const scoreNum = Number(g.score)
-          byId.set(id, {
-            id,
-            score: Number.isFinite(scoreNum)
-              ? Math.min(100, Math.max(0, Math.round(scoreNum)))
-              : 0,
-            feedback: String(g.feedback ?? ''),
-          })
-        }
-        grades = [...byId.values()]
-      }
-
+      const grades = await gradeWritten(written, contextUsed)
       const gradeById = new Map(grades.map((g) => [g.id, g.score]))
       const writtenScores = written.map((q) => gradeById.get(q.id) ?? 0)
       const writtenAvg =
@@ -213,48 +357,30 @@ export function PracticeTestPage() {
           ? writtenScores.reduce((sum, s) => sum + s, 0) / written.length
           : null
 
-      // Per-question contribution: each objective/written item weighs equally.
       const totalN = objective.length + written.length
       const overall =
         totalN > 0
           ? (correct * 100 + writtenScores.reduce((s, n) => s + n, 0)) / totalN
           : 0
 
-      const topics = [
-        ...new Set([...inferTopicsFromScope(scope), ...contextTopics]),
-      ].slice(0, 10)
+      const mode: 'practice' | 'exam' | 'scenario' =
+        practiceMode === 'scenario'
+          ? 'scenario'
+          : examMode
+            ? 'exam'
+            : 'practice'
 
-      const payloadJson = JSON.stringify({
+      await finishAttempt({
         questions,
-        answers,
         grades,
-        usedSample,
-        topics,
-        retrieval: retrievalMode,
+        correct,
+        objectiveCount: objective.length,
+        overall,
+        writtenAvg,
+        writtenCount: written.length,
+        mode,
+        vignetteText: vignette || undefined,
       })
-
-      const { errors: saveErrors } = await dataClient.models.Attempt.create({
-        scope: scope.trim(),
-        questionCount: questions.length,
-        scorePercent: Math.round(overall * 10) / 10,
-        mcCorrect: correct,
-        mcTotal: objective.length,
-        writtenAvgScore: writtenAvg ?? undefined,
-        writtenTotal: written.length,
-        usedSampleContext: usedSample,
-        payloadJson,
-        topicsJson: JSON.stringify(topics),
-        completedAt: new Date().toISOString(),
-      })
-      if (saveErrors?.length) {
-        throw new Error(saveErrors.map((e) => e.message).join('; '))
-      }
-
-      setMcCorrect(correct)
-      setMcTotal(objective.length)
-      setWrittenGrades(grades)
-      setScorePercent(Math.round(overall * 10) / 10)
-      setPhase('results')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Submit failed')
     } finally {
@@ -262,9 +388,19 @@ export function PracticeTestPage() {
     }
   }
 
+  submitRef.current = onSubmitTest
+
   function setAnswer(id: string, value: string) {
     setAnswers((prev) => ({ ...prev, [id]: value }))
   }
+
+  function formatTimer(total: number) {
+    const m = Math.floor(total / 60)
+    const s = total % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  const sourceWeakness = searchParams.get('source') === 'weakness'
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -318,8 +454,9 @@ export function PracticeTestPage() {
           <CardHeader>
             <CardTitle>Exam scope</CardTitle>
             <CardDescription>
-              Describe what the next exam covers. Default mix is ~60% multiple
-              choice.
+              {sourceWeakness
+                ? 'Scoped from your weakest topics. Adjust before generating.'
+                : 'Describe what the next exam covers. Optional exam mode defers feedback until submit.'}
             </CardDescription>
           </CardHeader>
           <form onSubmit={onGenerate}>
@@ -335,38 +472,94 @@ export function PracticeTestPage() {
                   onChange={(e) => setScope(e.target.value)}
                 />
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="count">Number of questions</Label>
-                  <Input
-                    id="count"
-                    type="number"
-                    min={3}
-                    max={15}
-                    value={questionCount}
-                    onChange={(e) =>
-                      setQuestionCount(
-                        clampInt(Number(e.target.value), 3, 15, 5),
-                      )
-                    }
-                    onBlur={() =>
-                      setQuestionCount((n) => clampInt(n, 3, 15, 5))
-                    }
+
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="practiceMode"
+                    checked={practiceMode === 'practice'}
+                    onChange={() => setPracticeMode('practice')}
                   />
+                  Standard practice
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="practiceMode"
+                    checked={practiceMode === 'scenario'}
+                    onChange={() => setPracticeMode('scenario')}
+                  />
+                  Clinical scenario
+                </label>
+              </div>
+
+              {practiceMode === 'practice' ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="count">Number of questions</Label>
+                    <Input
+                      id="count"
+                      type="number"
+                      min={3}
+                      max={15}
+                      value={questionCount}
+                      onChange={(e) =>
+                        setQuestionCount(
+                          clampInt(Number(e.target.value), 3, 15, 5),
+                        )
+                      }
+                      onBlur={() =>
+                        setQuestionCount((n) => clampInt(n, 3, 15, 5))
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="mc">Multiple choice %</Label>
+                    <Input
+                      id="mc"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={mcPercent}
+                      onChange={(e) =>
+                        setMcPercent(clampInt(Number(e.target.value), 0, 100, 60))
+                      }
+                      onBlur={() =>
+                        setMcPercent((n) => clampInt(n, 0, 100, 60))
+                      }
+                    />
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="mc">Multiple choice %</Label>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Generates a short vignette plus ordered written decision steps
+                  grounded in your materials.
+                </p>
+              )}
+
+              <div className="border-border space-y-3 rounded-md border p-3">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={examMode}
+                    onChange={(e) => setExamMode(e.target.checked)}
+                  />
+                  Exam mode (hide feedback until submit)
+                </label>
+                <div className="flex flex-col gap-2 sm:max-w-xs">
+                  <Label htmlFor="timer">Time limit (minutes, 0 = none)</Label>
                   <Input
-                    id="mc"
+                    id="timer"
                     type="number"
                     min={0}
-                    max={100}
-                    value={mcPercent}
+                    max={180}
+                    disabled={!examMode}
+                    value={timeLimitMinutes}
                     onChange={(e) =>
-                      setMcPercent(clampInt(Number(e.target.value), 0, 100, 60))
-                    }
-                    onBlur={() =>
-                      setMcPercent((n) => clampInt(n, 0, 100, 60))
+                      setTimeLimitMinutes(
+                        clampInt(Number(e.target.value), 0, 180, 0),
+                      )
                     }
                   />
                 </div>
@@ -378,7 +571,9 @@ export function PracticeTestPage() {
                   ? 'Loading context…'
                   : busy
                     ? 'Generating…'
-                    : 'Generate practice test'}
+                    : practiceMode === 'scenario'
+                      ? 'Generate scenario'
+                      : 'Generate practice test'}
               </Button>
             </CardFooter>
           </form>
@@ -386,16 +581,54 @@ export function PracticeTestPage() {
       ) : null}
 
       {phase === 'taking' ? (
-        <form className="flex flex-col gap-4" onSubmit={onSubmitTest}>
-          {usedSample ? (
-            <Badge variant="outline">Using sample context</Badge>
-          ) : (
-            <Badge variant="secondary">
-              {retrievalMode === 'semantic'
-                ? 'Semantic retrieval'
-                : 'Using your materials'}
-            </Badge>
-          )}
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void onSubmitTest()
+          }}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            {usedSample ? (
+              <Badge variant="outline">Using sample context</Badge>
+            ) : (
+              <Badge variant="secondary">
+                {retrievalMode === 'semantic'
+                  ? 'Semantic retrieval'
+                  : 'Using your materials'}
+              </Badge>
+            )}
+            {examMode ? <Badge>Exam mode</Badge> : null}
+            {practiceMode === 'scenario' ? (
+              <Badge variant="outline">Scenario</Badge>
+            ) : null}
+            {secondsLeft != null ? (
+              <Badge variant={secondsLeft <= 60 ? 'destructive' : 'secondary'}>
+                Time left {formatTimer(secondsLeft)}
+              </Badge>
+            ) : null}
+          </div>
+
+          {vignette ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Clinical vignette</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-sm">{vignette}</p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {examMode ? (
+            <Alert>
+              <AlertTitle>Exam in progress</AlertTitle>
+              <AlertDescription>
+                Correctness and explanations stay hidden until you submit.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {questions.map((q, index) => (
             <Card key={q.id}>
               <CardHeader>
@@ -449,6 +682,9 @@ export function PracticeTestPage() {
                 setQuestions([])
                 setAnswers({})
                 setWrittenGrades([])
+                setVignette('')
+                setSecondsLeft(null)
+                setStartedAt(null)
                 setError(null)
               }}
             >
@@ -474,14 +710,32 @@ export function PracticeTestPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="text-muted-foreground text-sm">
-              Attempt saved to your history for Phase 4.
+              Attempt saved to your history.
             </CardContent>
             <CardFooter>
-              <Button type="button" onClick={() => setPhase('setup')}>
+              <Button
+                type="button"
+                onClick={() => {
+                  setPhase('setup')
+                  setSecondsLeft(null)
+                  setStartedAt(null)
+                }}
+              >
                 New practice test
               </Button>
             </CardFooter>
           </Card>
+
+          {vignette ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Vignette</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-sm">{vignette}</p>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {questions.map((q) => {
             const grade = writtenGrades.find((g) => g.id === q.id)

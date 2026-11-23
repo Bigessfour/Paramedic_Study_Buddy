@@ -58,3 +58,14 @@ export function buildTopicBreakdown(attempts: Attempt[]): TopicBreakdown[] {
     }))
     .sort((a, b) => a.avgScore - b.avgScore)
 }
+
+/** Build a practice-test scope string from weakest topics. */
+export function weakTopicsScope(
+  breakdown: TopicBreakdown[],
+  limit = 4,
+): string | null {
+  const weak = breakdown.filter((t) => t.attempts > 0).slice(0, limit)
+  if (weak.length === 0) return null
+  const labels = weak.map((t) => t.topic).join(', ')
+  return `Chapters/topics: ${labels} (weakness practice)`
+}

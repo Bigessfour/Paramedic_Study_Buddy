@@ -114,6 +114,17 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(xaiStudy)),
 
+  /** Lightweight clinical scenario (vignette + ordered short-answer steps). */
+  generateClinicalScenario: a
+    .mutation()
+    .arguments({
+      scope: a.string().required(),
+      context: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(xaiStudy)),
+
   /** Returns a query embedding vector for client-side cosine RAG. */
   embedQuery: a
     .mutation()
