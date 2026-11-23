@@ -25,6 +25,10 @@ function requireString(value: unknown, name: string): string {
   return value.trim()
 }
 
+function optionalCourseFormat(value: unknown): boolean {
+  return value === true || value === 1 || value === 'true' || value === '1'
+}
+
 function redactKey(message: string): string {
   return message.replace(/xai-[A-Za-z0-9_-]+/g, 'xai-[REDACTED]')
 }
@@ -143,6 +147,7 @@ function normalizeQuestions(
 async function generatePracticeTest(args: Record<string, unknown>) {
   const scope = requireString(args.scope, 'scope')
   const context = requireString(args.context, 'context')
+  const courseFormat = optionalCourseFormat(args.courseFormat)
   const rawCount = Number(args.questionCount ?? 5)
   const rawMc = Number(args.mcPercent ?? 60)
   const questionCount = Math.min(
@@ -153,13 +158,54 @@ async function generatePracticeTest(args: Record<string, unknown>) {
     Math.max(Number.isFinite(rawMc) ? Math.round(rawMc) : 60, 0),
     100,
   )
-  const mcCount = Math.round((questionCount * mcPercent) / 100)
-  const tfCount = Math.max(1, Math.round(questionCount * 0.15))
-  const writtenCount = Math.max(1, questionCount - mcCount - tfCount)
 
-  const system = `You are a paramedic education exam writer. Use ONLY the provided course material context. Do not invent protocols outside the context. Return JSON only.`
+  let system: string
+  let user: string
 
-  const user = `Exam scope: ${scope}
+  if (courseFormat) {
+    const recallCount = Math.floor(questionCount / 2)
+    const scenarioCount = questionCount - recallCount
+
+    system = `You are a paramedic education exam writer mimicking the Navigate2 course exam style. Use ONLY the provided course material context. Do not invent protocols or facts outside the context. Every item is multiple choice, "Select one", exactly four options, exactly one best answer. No true/false, no short-answer, no multi-step scenarios. Return JSON only.`
+
+    user = `Exam scope: ${scope}
+
+Create exactly ${questionCount} multiple-choice questions grounded ONLY in this material context:
+---
+${context.slice(0, 24000)}
+---
+
+Course exam rules (follow strictly):
+- Every question has "type": "multiple_choice" only.
+- Exactly 4 answer options per question (short clauses; distractors must be plausible, clinically reasonable wrong choices—not joke answers or obviously incorrect options).
+- "correctAnswer" must match one option string exactly (verbatim).
+- Include a concise one-line "explanation" teaching why the correct answer is right.
+
+Question shapes (blend roughly ${recallCount} recall + ${scenarioCount} clinical vignette):
+1) RECALL / SENTENCE-COMPLETION (~half): stem is a fragment ending with a colon; options complete the sentence (e.g. "Cor pulmonale is defined as:", "The main stem bronchus ends at the level of the:"). Options are short finishing clauses (often start lowercase).
+2) CLINICAL SCENARIO VIGNETTE (~half): brief patient (age/history), presenting complaint, vital signs, then a CHANGE ON REASSESSMENT (e.g. SpO2 drops, respirations slow). End the stem with "You should:" and offer four plausible next interventions where exactly one is best.
+
+Return JSON:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "stem": "question text",
+      "options": ["option A text", "option B text", "option C text", "option D text"],
+      "correctAnswer": "exact text of the correct option",
+      "explanation": "one concise teaching line"
+    }
+  ]
+}`
+  } else {
+    const mcCount = Math.round((questionCount * mcPercent) / 100)
+    const tfCount = Math.max(1, Math.round(questionCount * 0.15))
+    const writtenCount = Math.max(1, questionCount - mcCount - tfCount)
+
+    system = `You are a paramedic education exam writer. Use ONLY the provided course material context. Do not invent protocols outside the context. Return JSON only.`
+
+    user = `Exam scope: ${scope}
 
 Create ${questionCount} practice questions grounded ONLY in this material context:
 ---
@@ -182,6 +228,7 @@ Return JSON:
     }
   ]
 }`
+  }
 
   const content = await callXai(system, user)
   const parsed = parseJsonObject(content)
