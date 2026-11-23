@@ -210,7 +210,17 @@ Do not start feature implementation until this Definition of Done is committed. 
 - If Cursor starts adding extra features, reply: “Stay within the current phase. Do not expand scope.”
 - Syncfusion license key and xAI key stay in environment variables only.
 
-v1 (Phases 0–5), Phase 6 (v1.1), course-pack RAG, and Phase 7 (v1.2) are shipped. Stop here unless opening a new milestone.
+v1 (Phases 0–5), Phase 6 (v1.1), course-pack RAG, and Phase 7 (v1.2) are shipped. Production readiness is Phase 8 — see [`PROD_READY.md`](./PROD_READY.md).
+
+---
+
+## Phase 8 — Production readiness
+
+**Done when:** The Definition of Done in [`PROD_READY.md`](./PROD_READY.md) is green.
+
+Scope: runtime error logging, lightweight usage analytics, Feature Request page (`/requests`), Syncfusion/UI validation, full smoke test (`SMOKE_TEST.md`). No new study features.
+
+Final commit: `feat: error/usage logging, feature requests, and production readiness`
 
 ---
 

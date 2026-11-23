@@ -28,7 +28,7 @@ The app is done when all of the following are true:
 7. Basic error handling and empty states exist. No critical console errors on the happy path.
 8. A short README exists with: how to run locally, how to deploy, required env vars, and license notes (Syncfusion + xAI).
 
-v1, v1.1, and v1.2 (Phase 7 daily-use) are shipped. See [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
+v1, v1.1, and v1.2 (Phase 7 daily-use) are shipped. Production readiness DoD: [`PROD_READY.md`](./PROD_READY.md). See also [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
 
 ### Definition of Done — v1.1 (condensed)
 
