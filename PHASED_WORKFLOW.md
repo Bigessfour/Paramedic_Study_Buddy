@@ -210,7 +210,55 @@ Do not start feature implementation until this Definition of Done is committed. 
 - If Cursor starts adding extra features, reply: “Stay within the current phase. Do not expand scope.”
 - Syncfusion license key and xAI key stay in environment variables only.
 
-v1 (Phases 0–5) is shipped. Work Phase 6 against the v1.1 Definition of Done above; then stop.
+v1 (Phases 0–5) and Phase 6 (v1.1) are shipped. Course-pack RAG is shipped. Work Phase 7 against the v1.2 Definition of Done below; then stop.
+
+---
+
+## Phase 7 — Daily Use Features (v1.2)
+
+**Done when:** The Definition of Done — v1.2 below is green.
+
+### Scope
+
+1. **Weakness-driven practice** — Dashboard “Practice my weak topics” starts a scoped practice test from existing topic/chapter weakness data.
+2. **Exam mode + timed tests** — Optional timer and exam mode on Practice Test (deferred feedback until the end).
+3. **Explain this wrong answer** — Attempt Detail opens Tutor pre-loaded with missed question context.
+4. **Chapter / topic progress map** — View of chapters 1–53 / topics with last studied, coverage, and weakness signal.
+5. **Lightweight clinical scenarios** — Text vignette → ordered steps/decisions, generated and graded via xAI + course materials.
+6. **Daily / spaced review queue** — “Review today” mixes due flashcards (SM-2) and a few weakness-based questions.
+7. **Export / share attempt** — Copy or download Markdown/text attempt summary.
+8. **Better flashcard generation** — From chapter/material or wrong answers, with edit-before-save.
+
+### Out of scope for v1.2
+
+Class-wide sharing, leaderboards, Anki export, image/ECG questions, full CAT simulator, OpenSearch/Pinecone, new AI providers.
+
+### Cursor Prompt 7
+```
+Implement Phase 7 (v1.2) for Paramedic Study Buddy after the Definition of Done — v1.2 is committed.
+
+Order: weakness practice → exam mode → Explain this → progress map → Review today → export → scenarios → flashcard polish.
+Extend existing pages/models and the xAI Lambda. Prefer query params and payloadJson over new Dynamo tables.
+Never hard-code API keys. Stay within Phase 7 scope.
+Final commit: "feat: v1.2 daily use practice, exam mode, review, and scenarios"
+```
+
+### Definition of Done — v1.2 (Ship When This Is True)
+
+The v1.2 features are done when all of the following are true:
+
+1. Dashboard has a “Practice my weak topics” action that starts a scoped practice test using existing weakness data.
+2. Practice Test supports optional exam mode (timer + deferred feedback).
+3. Attempt Detail has an “Explain this” action on missed questions that opens the Tutor with the question context.
+4. A chapter/topic progress view exists and shows basic coverage or last-studied signal.
+5. User can generate and take at least one lightweight clinical scenario grounded in course materials.
+6. A “Review today” entry point mixes due flashcards (SM-2) and a few weakness-based questions.
+7. User can export or copy an attempt summary (questions, answers, feedback) as Markdown/text.
+8. Flashcard generation supports chapter/material or wrong-answer sources with edit-before-save.
+9. All new data remains owner-isolated; no hard-coded API keys.
+10. Empty/error states exist; README notes any new routes/setup; v1/v1.1 flows still build and work.
+
+Do not start feature implementation until this Definition of Done is committed. When it is met, stop.
 
 ---
 

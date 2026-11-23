@@ -28,13 +28,19 @@ The app is done when all of the following are true:
 7. Basic error handling and empty states exist. No critical console errors on the happy path.
 8. A short README exists with: how to run locally, how to deploy, required env vars, and license notes (Syncfusion + xAI).
 
-v1 is shipped. Further work is Phase 6 (v1.1) in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
+v1 and v1.1 are shipped. Further work is Phase 7 (v1.2) in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
 
 ### Definition of Done — v1.1 (condensed)
 
 Ship when: AI Tutor chat uses user materials (or labeled sample context); flashcards generate from material/attempt with basic SM-2 review; Dashboard shows topic/chapter performance; practice tests use improved retrieval; new data is user-isolated; empty/error states exist; README covers any new setup; v1 flows still build and work.
 
 Full checklist and Phase 6 scope: see **Phase 6** and **Definition of Done — v1.1** in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md).
+
+### Definition of Done — v1.2 (condensed)
+
+Ship when: Dashboard “Practice my weak topics”; Practice exam mode + timer; Attempt Detail “Explain this” → Tutor; chapter/topic progress map; lightweight clinical scenarios; Review today (due cards + weak quiz); attempt Markdown export; flashcards from chapter/wrong answers with edit-before-save; owner isolation; empty/error states; v1/v1.1 still work.
+
+Full checklist: **Phase 7** and **Definition of Done — v1.2** in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md). Routes: `/practice`, `/tutor`, `/flashcards`, `/progress`, `/review`.
 
 ---
 
