@@ -42,6 +42,17 @@ Ship when: Dashboard “Practice my weak topics”; Practice exam mode + timer; 
 
 Full checklist: **Phase 7** and **Definition of Done — v1.2** in [`PHASED_WORKFLOW.md`](./PHASED_WORKFLOW.md). Routes: `/practice`, `/tutor`, `/flashcards`, `/progress`, `/review`.
 
+### Production readiness
+
+See [`PROD_READY.md`](./PROD_READY.md). Smoke log: [`SMOKE_TEST.md`](./SMOKE_TEST.md).
+
+- **Telemetry:** Unhandled errors → owner-scoped `ErrorLog`; feature usage via `track()` → `UsageEvent`. No secrets logged.
+- **Feature requests:** `/requests` — title + description; owner sees their own list only.
+- **Amplify models (owner):** `ErrorLog`, `UsageEvent`, `FeatureRequest` (plus existing Material, Attempt, TutorThread, Flashcard, CourseChunk).
+- No new env vars; keep `VITE_SYNCFUSION_LICENSE` set so Grid/Charts have no license banner.
+
+Routes: `/dashboard`, `/materials`, `/practice`, `/history`, `/tutor`, `/flashcards`, `/progress`, `/review`, `/requests`.
+
 ---
 
 ## Local development

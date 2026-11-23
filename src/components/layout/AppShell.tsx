@@ -8,6 +8,7 @@ import {
   History,
   LayoutDashboard,
   Layers,
+  Lightbulb,
   LogOut,
   Menu,
   MessagesSquare,
@@ -40,6 +41,7 @@ const navItems = [
   { to: '/progress', label: 'Progress', icon: ChartColumn },
   { to: '/tutor', label: 'AI Tutor', icon: MessagesSquare },
   { to: '/flashcards', label: 'Flashcards', icon: Layers },
+  { to: '/requests', label: 'Requests', icon: Lightbulb },
   { to: '/history', label: 'History', icon: History },
 ] as const
 

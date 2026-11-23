@@ -20,6 +20,7 @@ import {
   copyText,
   downloadText,
 } from '@/lib/exportAttempt'
+import { track } from '@/lib/telemetry'
 
 type Row = {
   id: string
@@ -81,9 +82,11 @@ export function HistoryPage() {
     const md = attemptToMarkdown(latest, parseAttemptPayload(latest))
     try {
       await copyText(md)
+      track('export_clicked', { method: 'copy', source: 'history' })
       setExportMsg('Latest attempt copied as Markdown')
     } catch {
       downloadText(`attempt-latest.md`, md)
+      track('export_clicked', { method: 'download', source: 'history' })
       setExportMsg('Download started for latest attempt')
     }
   }

@@ -19,6 +19,7 @@ import {
 import { listAllAttempts, listAllMaterials } from '@/lib/listAll'
 import { selectMaterialContext } from '@/lib/materialContext'
 import { applySm2, initialSm2, type Sm2Rating } from '@/lib/sm2'
+import { track } from '@/lib/telemetry'
 import type { Schema } from '../../amplify/data/resource'
 
 type Material = Schema['Material']['type']
@@ -296,6 +297,7 @@ export function FlashcardsPage() {
         dueAt: next.dueAt,
       })
       if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+      track('flashcard_reviewed', { rating, source: 'flashcards' })
       await reload()
       setFlipped(false)
       setReviewIndex((i) => {

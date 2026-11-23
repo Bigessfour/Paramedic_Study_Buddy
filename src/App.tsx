@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { AttemptDetailPage } from '@/pages/AttemptDetailPage'
 import { ConfirmSignUpPage } from '@/pages/ConfirmSignUpPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { FeatureRequestsPage } from '@/pages/FeatureRequestsPage'
 import { FlashcardsPage } from '@/pages/FlashcardsPage'
 import { HistoryPage } from '@/pages/HistoryPage'
 import { LoginPage } from '@/pages/LoginPage'
@@ -33,6 +34,7 @@ export default function App() {
               <Route path="/flashcards" element={<FlashcardsPage />} />
               <Route path="/progress" element={<ProgressPage />} />
               <Route path="/review" element={<ReviewPage />} />
+              <Route path="/requests" element={<FeatureRequestsPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/history/:attemptId" element={<AttemptDetailPage />} />
             </Route>

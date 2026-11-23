@@ -20,4 +20,4 @@ Do not start implementation until this Definition of Done is committed. When it 
 
 ## Smoke test
 
-Results: [`SMOKE_TEST.md`](./SMOKE_TEST.md) (filled after the smoke pass).
+Results: [`SMOKE_TEST.md`](./SMOKE_TEST.md) — **PASS** (2026-11-22 local + sandbox).

@@ -13,6 +13,7 @@ import {
 import { listAttempts } from '@/lib/attempts'
 import { dataClient } from '@/lib/amplifyData'
 import { applySm2, type Sm2Rating } from '@/lib/sm2'
+import { track } from '@/lib/telemetry'
 import { buildTopicBreakdown, weakTopicsScope } from '@/lib/topics'
 import { cn } from '@/lib/utils'
 import type { Schema } from '../../amplify/data/resource'
@@ -64,6 +65,7 @@ export function ReviewPage() {
   }
 
   useEffect(() => {
+    track('review_queue_opened')
     void (async () => {
       try {
         await reload()
@@ -96,6 +98,7 @@ export function ReviewPage() {
         dueAt: next.dueAt,
       })
       if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+      track('flashcard_reviewed', { rating, source: 'review' })
       await reload()
       setFlipped(false)
       setIndex((i) => {

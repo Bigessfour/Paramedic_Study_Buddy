@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listAllMaterials } from '@/lib/listAll'
 import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
+import { track } from '@/lib/telemetry'
 import { inferTopicsFromScope } from '@/lib/topics'
 import type { Schema } from '../../amplify/data/resource'
 
@@ -282,6 +283,11 @@ export function PracticeTestPage() {
         setSecondsLeft(
           examMode && timeLimitMinutes > 0 ? timeLimitMinutes * 60 : null,
         )
+        track('practice_test_generated', {
+          mode: 'scenario',
+          questionCount: nextQuestions.length,
+          examMode,
+        })
         setPhase('taking')
         return
       }
@@ -321,6 +327,11 @@ export function PracticeTestPage() {
       setSecondsLeft(
         examMode && timeLimitMinutes > 0 ? timeLimitMinutes * 60 : null,
       )
+      track('practice_test_generated', {
+        mode: examMode ? 'exam' : 'practice',
+        questionCount: nextQuestions.length,
+        examMode,
+      })
       setPhase('taking')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
@@ -381,6 +392,12 @@ export function PracticeTestPage() {
         mode,
         vignetteText: vignette || undefined,
       })
+      if (mode === 'scenario') {
+        track('scenario_completed', {
+          questionCount: questions.length,
+          scorePercent: Math.round(overall * 10) / 10,
+        })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Submit failed')
     } finally {

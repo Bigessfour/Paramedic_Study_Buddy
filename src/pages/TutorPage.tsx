@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listAllMaterials } from '@/lib/listAll'
 import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
+import { track } from '@/lib/telemetry'
 import {
   consumeTutorExplainSeed,
   formatExplainPrompt,
@@ -170,6 +171,7 @@ export function TutorPage() {
       }
       setActiveId(created?.id ?? null)
     }
+    track('tutor_message_sent', { messageLength: text.length })
     await loadThreads()
   }
 

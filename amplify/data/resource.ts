@@ -70,6 +70,38 @@ const schema = a.schema({
     })
     .authorization((allow) => [allow.owner()]),
 
+  /** Client-captured runtime errors (owner-isolated; no secrets). */
+  ErrorLog: a
+    .model({
+      message: a.string().required(),
+      stack: a.string(),
+      route: a.string(),
+      componentHint: a.string(),
+      userAgent: a.string(),
+      createdAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /** Lightweight feature-usage analytics (owner-isolated). */
+  UsageEvent: a
+    .model({
+      eventName: a.string().required(),
+      metadataJson: a.string(),
+      route: a.string(),
+      createdAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /** User feature ideas (owner-isolated list). */
+  FeatureRequest: a
+    .model({
+      title: a.string().required(),
+      description: a.string().required(),
+      status: a.enum(['open', 'done']),
+      createdAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
   generatePracticeTest: a
     .mutation()
     .arguments({

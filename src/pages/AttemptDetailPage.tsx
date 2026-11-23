@@ -11,6 +11,7 @@ import {
   copyText,
   downloadText,
 } from '@/lib/exportAttempt'
+import { track } from '@/lib/telemetry'
 import { saveTutorExplainSeed } from '@/lib/tutorSeed'
 import {
   Card,
@@ -74,6 +75,7 @@ export function AttemptDetailPage() {
     if (!md) return
     try {
       await copyText(md)
+      track('export_clicked', { method: 'copy', source: 'attempt_detail' })
       setExportMsg('Copied Markdown to clipboard')
     } catch {
       setExportMsg('Could not copy — try Download instead')
@@ -85,6 +87,7 @@ export function AttemptDetailPage() {
     if (!md || !attempt) return
     const stamp = (attempt.completedAt ?? 'attempt').slice(0, 10)
     downloadText(`attempt-${stamp}.md`, md)
+    track('export_clicked', { method: 'download', source: 'attempt_detail' })
     setExportMsg('Download started')
   }
 
