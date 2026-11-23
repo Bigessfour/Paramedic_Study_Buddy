@@ -7,12 +7,14 @@
  *   AWS_PROFILE=steve-copilot npm run embed:course
  *   npm run embed:course -- --limit 3
  *   npm run embed:course -- --force
+ *   npm run embed:course -- --chapters 1,2
  *
  * Env (optional):
  *   EMBEDDING_PROVIDER=bedrock
  *   EMBEDDING_MODEL=amazon.titan-embed-text-v2:0
  *   AWS_REGION / BEDROCK_REGION (default us-east-2)
  *   EMBED_CHUNK_SIZE=800 EMBED_CHUNK_OVERLAP=120 EMBED_MAX_CHAPTER_CHARS=40000
+ *   (Chapter 1 uses up to 200000 when it contains the table-gap supplement.)
  */
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -38,15 +40,29 @@ const OVERLAP = Number(process.env.EMBED_CHUNK_OVERLAP || 120)
 const MAX_CHAPTER_CHARS = Number(
   process.env.EMBED_MAX_CHAPTER_CHARS || 40_000,
 )
+const MAX_CHAPTER_CHARS_SUPPLEMENTED = Number(
+  process.env.EMBED_MAX_CHAPTER_CHARS_SUPPLEMENTED || 200_000,
+)
 const DIMENSIONS = 1024
 const CONCURRENCY = Number(process.env.EMBED_CONCURRENCY || 4)
 
 function parseArgs(argv) {
   const limitIdx = argv.indexOf('--limit')
+  const chaptersIdx = argv.indexOf('--chapters')
+  const chapters =
+    chaptersIdx >= 0
+      ? new Set(
+          String(argv[chaptersIdx + 1] || '')
+            .split(',')
+            .map((s) => String(Number(s.trim())))
+            .filter((s) => s && s !== 'NaN'),
+        )
+      : null
   return {
     force: argv.includes('--force'),
     dryRun: argv.includes('--dry-run'),
     limit: limitIdx >= 0 ? Number(argv[limitIdx + 1]) : Infinity,
+    chapters,
   }
 }
 
@@ -144,10 +160,13 @@ async function main() {
   }
 
   await fs.mkdir(EMBED_DIR, { recursive: true })
-  const files = (await fs.readdir(BY_CHAPTER))
+  let files = (await fs.readdir(BY_CHAPTER))
     .filter((n) => /^chapter-\d+\.md$/i.test(n))
     .sort()
-    .slice(0, args.limit)
+  if (args.chapters?.size) {
+    files = files.filter((n) => args.chapters.has(chapterLabel(n)))
+  }
+  files = files.slice(0, args.limit)
 
   if (files.length === 0) {
     console.error('No chapter-*.md files in course-context/by-chapter')
@@ -157,12 +176,33 @@ async function main() {
   const existing = args.force ? new Map() : await loadExisting()
   const client = new BedrockRuntimeClient({ region: REGION })
 
-  /** @type {Array<{chunkKey:string, chapter:string, source:string, tier:string, text:string, charStart:number, charEnd:number, contentHash:string, needsEmbed:boolean}>} */
+  /** @type {Array<{chunkKey:string, chapter:string, source:string, tier:string, text:string, charStart:number, charEnd:number, contentHash:string, needsEmbed:boolean, embedding?:number[]}>} */
   const planned = []
+
+  // When re-embedding a subset, keep other chapters' existing rows.
+  if (args.chapters?.size) {
+    for (const row of existing.values()) {
+      if (!args.chapters.has(String(row.chapter))) {
+        planned.push({
+          ...row,
+          needsEmbed: false,
+          embedding: row.embedding,
+        })
+      }
+    }
+  }
 
   for (const name of files) {
     const body = await fs.readFile(path.join(BY_CHAPTER, name), 'utf8')
-    const full = normalizeText(body).slice(0, MAX_CHAPTER_CHARS)
+    const normalized = normalizeText(body)
+    const hasSupplement =
+      /Course supplement|1\.\s*Manpower[\s\S]{0,400}15\.\s*Mutual aid/i.test(
+        body,
+      )
+    const cap = hasSupplement
+      ? MAX_CHAPTER_CHARS_SUPPLEMENTED
+      : MAX_CHAPTER_CHARS
+    const full = normalized.slice(0, cap)
     const chapter = chapterLabel(name)
     const parts = chunkText(full)
     for (const part of parts) {
@@ -173,7 +213,7 @@ async function main() {
         chunkKey,
         chapter,
         source: name,
-        tier: 'A',
+        tier: hasSupplement ? 'S' : 'A',
         text: part.text,
         charStart: part.charStart,
         charEnd: part.charEnd,

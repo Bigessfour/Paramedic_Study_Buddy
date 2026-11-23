@@ -30,6 +30,12 @@ The course pack is RAG-ready when all of the following are true:
 
 **Embedding provider:** Bedrock Titan Embed Text v2 (`amazon.titan-embed-text-v2:0`, us-east-2). xAI `/v1/embeddings` returned 404.
 
+### Tutor quality (course-first)
+
+- DOCX ingest prefers HTML→markdown tables; PDF OCR also targets “refer to Table …” pages.
+- When Chapter 1 extract only points at Table 1-1 without the list, ingest prepends [`scripts/course-supplements/ems-systems-act-1973-15-components.md`](./scripts/course-supplements/ems-systems-act-1973-15-components.md).
+- Retrieval is hybrid (semantic + keyword + chapter windows); tutor Lambda may attach a gated allowlisted/curated supplement if context is still thin.
+
 ---
 
 ## Commands (local)

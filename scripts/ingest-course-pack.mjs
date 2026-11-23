@@ -7,6 +7,7 @@
  *   node scripts/ingest-course-pack.mjs              # all tiers A→G
  *   node scripts/ingest-course-pack.mjs --tiers A,B,C
  *   node scripts/ingest-course-pack.mjs --ocr         # OCR sparse PDFs after native
+ *   node scripts/ingest-course-pack.mjs --force       # re-extract even if hash matches
  *   node scripts/ingest-course-pack.mjs --limit 5
  */
 import crypto from 'node:crypto'
@@ -28,6 +29,11 @@ const BY_CHAPTER = path.join(OUT_DIR, 'by-chapter')
 const BY_TIER = path.join(OUT_DIR, 'by-tier')
 const MANIFEST = path.join(OUT_DIR, 'manifest.jsonl')
 const REPORT = path.join(OUT_DIR, 'qc-report.json')
+const SUPPLEMENTS_DIR = path.join(ROOT, 'scripts', 'course-supplements')
+const TABLE_POINTER_RE = /refer to table\s*[\d.-]+/i
+const LIST_GAP_RE =
+  /15 required components|table\s*1-1|nhtsa[^\n]{0,40}10 system elements/i
+const LIST_PRESENT_RE = /manpower[\s\S]{0,200}training[\s\S]{0,200}communications/i
 
 GlobalWorkerOptions.workerSrc = path.join(
   ROOT,
@@ -68,11 +74,13 @@ function parseArgs(argv) {
   const args = {
     tiers: new Set(TIER_ORDER),
     ocr: false,
+    force: false,
     limit: Infinity,
   }
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i]
     if (a === '--ocr') args.ocr = true
+    else if (a === '--force') args.force = true
     else if (a === '--tiers') {
       args.tiers = new Set(
         argv[++i].split(',').map((t) => t.trim().toUpperCase()),
@@ -80,6 +88,54 @@ function parseArgs(argv) {
     } else if (a === '--limit') args.limit = Number(argv[++i])
   }
   return args
+}
+
+/** Convert mammoth HTML to markdown-ish text, preserving tables as pipes. */
+function htmlToMarkdownish(html) {
+  let out = html
+  out = out.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, body) => {
+    const rows = [...body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((m) => {
+      const cells = [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)].map(
+        (c) =>
+          c[1]
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/\s+/g, ' ')
+            .trim(),
+      )
+      return cells
+    })
+    if (rows.length === 0) return ''
+    const width = Math.max(...rows.map((r) => r.length))
+    const norm = rows.map((r) => {
+      const padded = [...r]
+      while (padded.length < width) padded.push('')
+      return padded
+    })
+    const header = norm[0]
+    const sep = header.map(() => '---')
+    const lines = [
+      `| ${header.join(' | ')} |`,
+      `| ${sep.join(' | ')} |`,
+      ...norm.slice(1).map((r) => `| ${r.join(' | ')} |`),
+    ]
+    return `\n\n### Extracted table\n\n${lines.join('\n')}\n\n`
+  })
+  out = out
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+  return out.trim()
 }
 
 async function ensureDirs() {
@@ -104,8 +160,14 @@ function cleanText(text) {
 }
 
 async function extractDocx(filePath) {
-  const result = await mammoth.extractRawText({ path: filePath })
-  return { text: cleanText(result.value), method: 'mammoth', pages: null }
+  // HTML path preserves Word tables that extractRawText often flattens away.
+  const htmlResult = await mammoth.convertToHtml({ path: filePath })
+  const fromHtml = cleanText(htmlToMarkdownish(htmlResult.value || ''))
+  if (fromHtml.length > 40) {
+    return { text: fromHtml, method: 'mammoth-html-tables', pages: null }
+  }
+  const raw = await mammoth.extractRawText({ path: filePath })
+  return { text: cleanText(raw.value), method: 'mammoth', pages: null }
 }
 
 async function extractPdfNative(filePath) {
@@ -180,9 +242,14 @@ async function extractPptx(filePath) {
 
 async function ocrPdfPages(filePath, pageTexts) {
   // Local PDFKit render + Vision OCR (avoid AWS Textract / pdfjs canvas).
+  // Also OCR pages that only point at tables (refer to Table X) — native text
+  // often misses the table body itself.
   const sparsePages = []
   for (let i = 0; i < (pageTexts?.length ?? 0); i += 1) {
-    if ((pageTexts[i] ?? '').trim().length < PDF_CHARS_PER_PAGE_MIN) {
+    const native = pageTexts[i] ?? ''
+    const sparse = native.trim().length < PDF_CHARS_PER_PAGE_MIN
+    const tablePointer = TABLE_POINTER_RE.test(native)
+    if (sparse || tablePointer) {
       sparsePages.push(i + 1)
     }
   }
@@ -264,6 +331,26 @@ async function writeManifest(rows) {
   await fs.writeFile(MANIFEST, lines)
 }
 
+async function loadChapterSupplements(chapterText, chapter) {
+  // When pack extracts only point at Table 1-1 / 15 components without listing
+  // them, inject a curated course-aligned supplement (not open web browse).
+  if (chapter !== 1) return []
+  if (!LIST_GAP_RE.test(chapterText)) return []
+  if (LIST_PRESENT_RE.test(chapterText)) return []
+  try {
+    const file = path.join(
+      SUPPLEMENTS_DIR,
+      'ems-systems-act-1973-15-components.md',
+    )
+    const body = await fs.readFile(file, 'utf8')
+    return [
+      `# Course supplement (Table 1-1 gap fill)\n\n_Tier S · curated_\n\n${body.trim()}`,
+    ]
+  } catch {
+    return []
+  }
+}
+
 async function rebuildChapterBundles(manifestRows) {
   const byChapter = new Map()
   for (const row of manifestRows) {
@@ -289,13 +376,20 @@ async function rebuildChapterBundles(manifestRows) {
         `# ${row.source}\n\n_Tier ${row.tier} · ${row.method}_\n\n${withoutHeader.trim()}`,
       )
     }
+    const joined = parts.join('\n\n---\n\n')
+    const extras = await loadChapterSupplements(joined, chapter)
+    // Prepend supplements so Dynamo Material truncation (80k) still keeps them.
+    const ordered = extras.length ? [...extras, ...parts] : parts
+    if (extras.length) {
+      console.log(`  + supplement for chapter ${chapter} (table/list gap)`)
+    }
     const out = path.join(
       BY_CHAPTER,
       `chapter-${String(chapter).padStart(2, '0')}.md`,
     )
     await fs.writeFile(
       out,
-      `# Chapter ${chapter}\n\n${parts.join('\n\n---\n\n')}\n`,
+      `# Chapter ${chapter}\n\n${ordered.join('\n\n---\n\n')}\n`,
     )
   }
 }
@@ -332,6 +426,7 @@ async function main() {
       args.ocr &&
       (prev?.needsOcr || prev?.status === 'error' || prev?.status === 'ok-partial')
     if (
+      !args.force &&
       prev?.sha256 === hash &&
       prev?.outPath &&
       prev?.status === 'ok' &&

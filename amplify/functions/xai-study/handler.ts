@@ -242,6 +242,100 @@ function normalizeGrades(raw: unknown): Array<{
   return [...byId.values()]
 }
 
+const TABLE_POINTER_RE = /refer to table\s*[\d.-]+/i
+const LIST_PRESENT_RE =
+  /manpower[\s\S]{0,200}training[\s\S]{0,200}communications/i
+
+/** Curated EMS Systems Act (1973) 15 components — course-aligned when Table 1-1 is missing from extracts. */
+const EMS_15_COMPONENTS_SUPPLEMENT = `EMS Systems Act of 1973 — 15 required components (standard AAOS/Nancy Caroline Chapter 1 Table 1-1 enumeration):
+1. Manpower
+2. Training
+3. Communications
+4. Transportation
+5. Facilities
+6. Critical care units
+7. Public safety agencies
+8. Consumer participation
+9. Access to care
+10. Patient transfer
+11. Standardized record-keeping
+12. Public information and education
+13. System review and evaluation
+14. Disaster planning
+15. Mutual aid`
+
+const WEB_ALLOWLIST: Array<{ match: RegExp; urls: string[] }> = [
+  {
+    match: /ems system|15 required|table\s*1-1|nhtsa|white paper/i,
+    urls: [
+      'https://en.wikipedia.org/wiki/Emergency_Medical_Services_Systems_Act_of_1973',
+    ],
+  },
+]
+
+function contextLooksThin(context: string): boolean {
+  if (LIST_PRESENT_RE.test(context)) return false
+  if (TABLE_POINTER_RE.test(context)) return true
+  if (/15 required components/i.test(context) && !/manpower/i.test(context)) {
+    return true
+  }
+  return context.replace(/\s+/g, ' ').trim().length < 400
+}
+
+async function fetchAllowlistedSupplement(
+  message: string,
+  context: string,
+): Promise<{ text: string; source: string } | null> {
+  const hay = `${message}\n${context}`
+  const entry = WEB_ALLOWLIST.find((e) => e.match.test(hay))
+  if (!entry) {
+    if (/ems system|15 required|table\s*1-1/i.test(hay)) {
+      return {
+        text: EMS_15_COMPONENTS_SUPPLEMENT,
+        source: 'curated-course-aligned:EMS-Systems-Act-1973',
+      }
+    }
+    return null
+  }
+
+  for (const url of entry.urls) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 4000)
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'ParamedicStudyBuddy/1.0 (study aid)' },
+      })
+      clearTimeout(timer)
+      if (!res.ok) continue
+      const html = await res.text()
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 6000)
+      if (text.length < 200) continue
+      // Prefer curated list if the page does not clearly enumerate components.
+      if (!/manpower/i.test(text)) {
+        return {
+          text: EMS_15_COMPONENTS_SUPPLEMENT,
+          source: `curated-after-fetch:${url}`,
+        }
+      }
+      return { text, source: url }
+    } catch {
+      // try next url / fall through
+    }
+  }
+
+  return {
+    text: EMS_15_COMPONENTS_SUPPLEMENT,
+    source: 'curated-course-aligned:EMS-Systems-Act-1973',
+  }
+}
+
 async function tutorChat(args: Record<string, unknown>) {
   const message = requireString(args.message, 'message')
   const context = requireString(args.context, 'context')
@@ -267,11 +361,34 @@ async function tutorChat(args: Record<string, unknown>) {
     }
   }
 
-  const system = `You are a paramedic study tutor. Answer ONLY using the provided course material context. If the answer is not in the context, say you cannot find it in the uploaded materials and suggest what topic to review. Be concise and clinically accurate. Return JSON only.`
+  let enrichedContext = context
+  let usedWebSupplement = false
+  let webSource: string | null = null
+  if (contextLooksThin(context)) {
+    const supplement = await fetchAllowlistedSupplement(message, context)
+    if (supplement) {
+      usedWebSupplement = true
+      webSource = supplement.source
+      enrichedContext = `${context}
+
+---
+SUPPLEMENT (use only to fill gaps the course extract points at, e.g. Table 1-1; stay consistent with course wording; label this as a supplement in your reply):
+Source: ${supplement.source}
+${supplement.text}`
+    }
+  }
+
+  const system = `You are a paramedic study tutor for a multi-tenant study app.
+Rules:
+- Prefer facts from the course material context. When listing items (e.g. EMS system components), quote or enumerate them from context when present.
+- Cite sources using filenames/chapter labels from the context (e.g. chapter-01.md, Table 1-1).
+- If the context only says "refer to Table X" without the table body, and a SUPPLEMENT section is provided, you MAY use the supplement to answer, and you MUST say it is a course-aligned supplement for that table/gap.
+- If neither course context nor supplement has the answer, say you cannot find it in the uploaded materials and suggest which chapter/table to review.
+- Be concise and clinically accurate. Return JSON only.`
 
   const user = `Course material context:
 ---
-${context.slice(0, 22000)}
+${enrichedContext.slice(0, 24000)}
 ---
 
 Recent chat (oldest first):
@@ -283,7 +400,8 @@ Return JSON:
 {
   "reply": "tutor response",
   "followUps": ["optional follow-up question 1", "optional follow-up question 2"],
-  "citedTopics": ["topic labels from context if any"]
+  "citedTopics": ["topic labels from context if any"],
+  "usedSupplement": ${usedWebSupplement ? 'true' : 'false'}
 }`
 
   const content = await callXai(system, user)
@@ -296,7 +414,13 @@ Return JSON:
   const citedTopics = Array.isArray(parsed.citedTopics)
     ? parsed.citedTopics.map((t) => String(t)).filter(Boolean).slice(0, 8)
     : []
-  return { reply, followUps, citedTopics }
+  return {
+    reply,
+    followUps,
+    citedTopics,
+    usedSupplement: usedWebSupplement,
+    supplementSource: webSource,
+  }
 }
 
 async function embedQuery(args: Record<string, unknown>) {

@@ -87,7 +87,7 @@ npm run upload:course        # S3 text + Material rows + CourseChunk embeddings
 # embeddings only:  npm run upload:course -- --embeddings-only
 ```
 
-Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-d) for both batch embed and query-time `embedQuery`. Practice/Tutor prefer semantic retrieval when `CourseChunk` rows exist; keyword fallback otherwise.
+Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-d) for both batch embed and query-time `embedQuery`. Practice/Tutor prefer hybrid semantic+keyword retrieval when `CourseChunk` rows exist; keyword fallback otherwise. Table-gap supplements (e.g. EMS Systems Act 15 components for Chapter 1) live under `scripts/course-supplements/` and are merged at ingest when extracts only cite Table 1-1.
 
 ---
 
@@ -95,14 +95,14 @@ Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-
 
 See [`.env.example`](./.env.example). Never commit real keys.
 
-| Name                               | Where                   | Notes                                    |
-| ---------------------------------- | ----------------------- | ---------------------------------------- |
-| `VITE_SYNCFUSION_LICENSE`          | Client build            | Community license; registered at startup |
-| `XAI_API_KEY`                      | Amplify Function secret | Server-only; never `VITE_`               |
-| `INGEST_EMAIL` / `INGEST_PASSWORD` | Local scripts only      | Cognito user for course-pack upload      |
-| `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` | Local embed + Lambda | Default `bedrock` + Titan v2             |
-| `BEDROCK_REGION`                   | Local embed + Lambda    | Default `us-east-2`                      |
-| `amplify_outputs.json`             | Client build            | From `sandbox:once` (gitignored)         |
+| Name                                     | Where                   | Notes                                    |
+| ---------------------------------------- | ----------------------- | ---------------------------------------- |
+| `VITE_SYNCFUSION_LICENSE`                | Client build            | Community license; registered at startup |
+| `XAI_API_KEY`                            | Amplify Function secret | Server-only; never `VITE_`               |
+| `INGEST_EMAIL` / `INGEST_PASSWORD`       | Local scripts only      | Cognito user for course-pack upload      |
+| `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` | Local embed + Lambda    | Default `bedrock` + Titan v2             |
+| `BEDROCK_REGION`                         | Local embed + Lambda    | Default `us-east-2`                      |
+| `amplify_outputs.json`                   | Client build            | From `sandbox:once` (gitignored)         |
 
 Self-sign-up is enabled (Cognito email/password). Classmates each get their own materials and attempts via owner authorization.
 
