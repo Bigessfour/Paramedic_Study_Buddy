@@ -48,7 +48,7 @@ See [`PROD_READY.md`](./PROD_READY.md). Smoke log: [`SMOKE_TEST.md`](./SMOKE_TES
 
 - **Telemetry:** Unhandled errors → owner-scoped `ErrorLog`; feature usage via `track()` → `UsageEvent`. No secrets logged.
 - **Feature requests:** `/requests` — title + description; owner sees their own list only.
-- **Amplify models (owner):** `ErrorLog`, `UsageEvent`, `FeatureRequest` (plus existing Material, Attempt, TutorThread, Flashcard, CourseChunk).
+- **Amplify models:** owner-private `Material`, `Attempt`, `TutorThread`, `Flashcard`, `CourseChunk`, `ErrorLog`, `UsageEvent`, `FeatureRequest`; shared-read `ClassMaterial`, `ClassChunk`.
 - No new env vars; keep `VITE_SYNCFUSION_LICENSE` set so Grid/Charts have no license banner.
 
 Routes: `/dashboard`, `/materials`, `/practice`, `/history`, `/tutor`, `/flashcards`, `/progress`, `/review`, `/requests`.
@@ -98,13 +98,16 @@ Status checklist: [`RAG_STATUS.md`](./RAG_STATUS.md). Live verification log: [`V
 ```bash
 npm run ingest:course:ocr    # PDF/DOCX/PPTX → course-context/ (Vision OCR on Mac)
 AWS_PROFILE=steve-copilot npm run embed:course   # Bedrock Titan → embeddings/chunks.jsonl
-# set INGEST_EMAIL / INGEST_PASSWORD in .env.local (Cognito user)
-npm run upload:course        # S3 text + Material rows + CourseChunk embeddings
+# set INGEST_EMAIL / INGEST_PASSWORD in .env.local (uploader Cognito user)
+npm run upload:course        # Shared class library: ClassMaterial + ClassChunk + class-library/ S3
 # text-only re-run: npm run upload:course -- --skip-embeddings
 # embeddings only:  npm run upload:course -- --embeddings-only
+# legacy private-only (not shared): npm run upload:course -- --personal
 ```
 
-Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-d) for both batch embed and query-time `embedQuery`. Practice/Tutor prefer hybrid semantic+keyword retrieval when `CourseChunk` rows exist; keyword fallback otherwise. Table-gap supplements (e.g. EMS Systems Act 15 components for Chapter 1) live under `scripts/course-supplements/` and are merged at ingest when extracts only cite Table 1-1.
+**Class library:** By default `upload:course` publishes to `ClassMaterial` / `ClassChunk` under `class-library/{identityId}/…`. Any signed-in classmate can **read** that library for Practice/Tutor/Flashcards. Personal PDF uploads on Materials stay owner-private. Attempts, tutor threads, and flashcard decks remain per-user.
+
+Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-d) for both batch embed and query-time `embedQuery`. Practice/Tutor prefer hybrid semantic+keyword retrieval when class or personal chunks exist; keyword fallback otherwise. Table-gap supplements (e.g. EMS Systems Act 15 components for Chapter 1) live under `scripts/course-supplements/` and are merged at ingest when extracts only cite Table 1-1.
 
 ---
 

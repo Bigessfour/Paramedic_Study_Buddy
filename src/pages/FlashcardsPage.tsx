@@ -16,7 +16,7 @@ import {
   normalizeAttemptQuestions,
   parseAttemptPayload,
 } from '@/lib/attempts'
-import { listAllAttempts, listAllMaterials } from '@/lib/listAll'
+import { listAllAttempts, listStudyMaterials } from '@/lib/listAll'
 import { selectMaterialContext } from '@/lib/materialContext'
 import { applySm2, initialSm2, type Sm2Rating } from '@/lib/sm2'
 import { track } from '@/lib/telemetry'
@@ -108,7 +108,7 @@ export function FlashcardsPage() {
   async function reload() {
     const [c, m, a] = await Promise.all([
       listFlashcards(),
-      listAllMaterials(),
+      listStudyMaterials(),
       listAllAttempts(),
     ])
     setCards(c)

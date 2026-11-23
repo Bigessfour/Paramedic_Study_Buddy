@@ -22,10 +22,11 @@ import {
 } from '@/components/ui/table'
 import { dataClient } from '@/lib/amplifyData'
 import { extractTextFromFile, isSupportedMaterial } from '@/lib/extractText'
-import { listAllMaterials } from '@/lib/listAll'
+import { listAllMaterials, listClassMaterials } from '@/lib/listAll'
 import type { Schema } from '../../amplify/data/resource'
 
 type Material = Schema['Material']['type']
+type ClassMaterial = Schema['ClassMaterial']['type']
 
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
@@ -44,6 +45,7 @@ function formatDate(value: string | null | undefined) {
 
 export function MaterialsPage() {
   const [materials, setMaterials] = useState<Material[]>([])
+  const [classMaterials, setClassMaterials] = useState<ClassMaterial[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -52,14 +54,24 @@ export function MaterialsPage() {
   const loadMaterials = useCallback(async () => {
     setError(null)
     try {
-      const data = await listAllMaterials()
-      const sorted = [...data].sort((a, b) =>
-        (b.uploadedAt ?? '').localeCompare(a.uploadedAt ?? ''),
+      const [personal, shared] = await Promise.all([
+        listAllMaterials(),
+        listClassMaterials(),
+      ])
+      setMaterials(
+        [...personal].sort((a, b) =>
+          (b.uploadedAt ?? '').localeCompare(a.uploadedAt ?? ''),
+        ),
       )
-      setMaterials(sorted)
+      setClassMaterials(
+        [...shared].sort((a, b) =>
+          (b.uploadedAt ?? '').localeCompare(a.uploadedAt ?? ''),
+        ),
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load materials')
       setMaterials([])
+      setClassMaterials([])
     }
     setLoading(false)
   }, [])
@@ -181,10 +193,62 @@ export function MaterialsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Materials</h1>
         <p className="text-muted-foreground text-sm">
-          Upload course PDFs or DOCX. Files stay private to your account and
-          become context for practice tests.
+          Class textbook library is shared with signed-in classmates. Your own
+          uploads stay private and also feed practice/tutor context.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Class library</CardTitle>
+          <CardDescription>
+            Shared course pack (readable by every signed-in classmate). Practice
+            tests and Tutor use this automatically.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-muted-foreground text-sm">Loading…</p>
+          ) : classMaterials.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No shared class materials yet. An admin runs{' '}
+              <code className="text-xs">npm run upload:course</code> once to
+              publish the textbook pack.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead>Uploaded</TableHead>
+                  <TableHead>Text</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {classMaterials.map((material) => (
+                  <TableRow key={material.id}>
+                    <TableCell className="max-w-[14rem] truncate font-medium">
+                      {material.filename}
+                    </TableCell>
+                    <TableCell>{formatBytes(material.sizeBytes ?? 0)}</TableCell>
+                    <TableCell>{formatDate(material.uploadedAt)}</TableCell>
+                    <TableCell>
+                      {material.extractStatus === 'ready' ? (
+                        <Badge variant="secondary">Ready</Badge>
+                      ) : material.extractStatus === 'failed' ? (
+                        <Badge variant="destructive">Failed</Badge>
+                      ) : (
+                        <Badge variant="outline">Pending</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

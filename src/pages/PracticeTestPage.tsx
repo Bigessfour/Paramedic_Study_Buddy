@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
-import { listAllMaterials } from '@/lib/listAll'
+import { listStudyMaterials } from '@/lib/listAll'
 import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
 import { track } from '@/lib/telemetry'
 import { inferTopicsFromScope } from '@/lib/topics'
@@ -135,7 +135,7 @@ export function PracticeTestPage() {
     void (async () => {
       setContextLoading(true)
       try {
-        const mats = await listAllMaterials()
+        const mats = await listStudyMaterials()
         setMaterials(mats)
       } catch (err) {
         setMaterials([])

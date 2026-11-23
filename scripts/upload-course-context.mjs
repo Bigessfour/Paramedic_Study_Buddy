@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Upload local course-context text into Amplify Storage + Material rows,
- * and optionally embeddings → S3 + CourseChunk rows.
+ * Upload local course-context text into the shared class library
+ * (ClassMaterial + ClassChunk + class-library/ S3), readable by all
+ * signed-in classmates. Attempts/tutor/flashcards stay per-user.
  *
  * Requires:
  *   - amplify_outputs.json (from sandbox)
- *   - INGEST_EMAIL / INGEST_PASSWORD
+ *   - INGEST_EMAIL / INGEST_PASSWORD (uploader = ClassMaterial owner)
  *
  * Usage:
  *   INGEST_EMAIL=... INGEST_PASSWORD=... node scripts/upload-course-context.mjs
@@ -14,6 +15,7 @@
  *   node scripts/upload-course-context.mjs --skip-embeddings
  *   node scripts/upload-course-context.mjs --embeddings-only
  *   node scripts/upload-course-context.mjs --index-files
+ *   node scripts/upload-course-context.mjs --personal   # legacy private path (not shared)
  */
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -38,6 +40,7 @@ function parseArgs(argv) {
     indexFiles: argv.includes('--index-files'),
     skipEmbeddings: argv.includes('--skip-embeddings'),
     embeddingsOnly: argv.includes('--embeddings-only'),
+    personal: argv.includes('--personal'),
     limit: (() => {
       const i = argv.indexOf('--limit')
       return i >= 0 ? Number(argv[i + 1]) : Infinity
@@ -63,11 +66,17 @@ function stripHeader(body) {
   return body.replace(/^---[\s\S]*?---\n*/, '')
 }
 
-async function listAllChunks(client) {
+function libraryRoot(personal, identityId) {
+  return personal
+    ? `private/materials/${identityId}`
+    : `class-library/${identityId}`
+}
+
+async function listAllModel(client, modelName) {
   const out = []
   let nextToken
   do {
-    const { data, nextToken: token, errors } = await client.models.CourseChunk.list({
+    const { data, nextToken: token, errors } = await client.models[modelName].list({
       limit: 200,
       nextToken,
     })
@@ -78,36 +87,35 @@ async function listAllChunks(client) {
   return out
 }
 
-async function putEmbeddingsBackup(outputs, session, identityId, raw) {
+async function putEmbeddingsBackup(outputs, session, s3Key, raw) {
   const bucket = outputs?.storage?.bucket_name
   const region = outputs?.storage?.aws_region || 'us-east-2'
   if (!bucket) throw new Error('amplify_outputs.json missing storage.bucket_name')
   if (!session.credentials) throw new Error('Missing Cognito credentials for S3 put')
 
-  const key = `private/materials/${identityId}/course-pack/embeddings/chunks.jsonl`
   const s3 = new S3Client({
     region,
     credentials: session.credentials,
   })
-  // Amplify uploadData hits FileReader for large multipart CRC in Node — use S3 SDK.
   await s3.send(
     new PutObjectCommand({
       Bucket: bucket,
-      Key: key,
+      Key: s3Key,
       Body: Buffer.from(raw, 'utf8'),
       ContentType: 'application/x-ndjson; charset=utf-8',
     }),
   )
-  return key
+  return s3Key
 }
 
 async function syncCourseChunks(client, outputs, session, identityId, args) {
+  const materialModel = args.personal ? 'CourseChunk' : 'ClassChunk'
   let raw
   try {
     raw = await fs.readFile(EMBEDDINGS_FILE, 'utf8')
   } catch {
     console.warn(
-      `No ${EMBEDDINGS_FILE} — skip CourseChunk sync (run npm run embed:course first).`,
+      `No ${EMBEDDINGS_FILE} — skip ${materialModel} sync (run npm run embed:course first).`,
     )
     return { uploaded: 0, created: 0, deleted: 0 }
   }
@@ -118,24 +126,25 @@ async function syncCourseChunks(client, outputs, session, identityId, args) {
     .map((line) => JSON.parse(line))
     .filter((r) => Array.isArray(r.embedding) && r.text && r.chunkKey)
 
-  const s3Key = `private/materials/${identityId}/course-pack/embeddings/chunks.jsonl`
+  const root = libraryRoot(args.personal, identityId)
+  const s3Key = `${root}/course-pack/embeddings/chunks.jsonl`
 
   if (args.dryRun) {
-    console.log(`DRY embeddings → ${s3Key} (${rows.length} chunks)`)
+    console.log(`DRY embeddings → ${s3Key} (${rows.length} chunks → ${materialModel})`)
     return { uploaded: 1, created: rows.length, deleted: 0 }
   }
 
-  const putKey = await putEmbeddingsBackup(outputs, session, identityId, raw)
+  const putKey = await putEmbeddingsBackup(outputs, session, s3Key, raw)
   console.log(`Embeddings backup → s3://${outputs.storage.bucket_name}/${putKey}`)
 
-  const existing = await listAllChunks(client)
+  const existing = await listAllModel(client, materialModel)
   const byKey = new Map(existing.map((c) => [c.chunkKey, c]))
   const wanted = new Set(rows.map((r) => r.chunkKey))
 
   let deleted = 0
   for (const old of existing) {
     if (!wanted.has(old.chunkKey)) {
-      const { errors } = await client.models.CourseChunk.delete({ id: old.id })
+      const { errors } = await client.models[materialModel].delete({ id: old.id })
       if (!errors?.length) deleted += 1
     }
   }
@@ -149,7 +158,7 @@ async function syncCourseChunks(client, outputs, session, identityId, args) {
         const embeddingJson = JSON.stringify(row.embedding)
         const prev = byKey.get(row.chunkKey)
         if (prev) {
-          const { errors } = await client.models.CourseChunk.update({
+          const { errors } = await client.models[materialModel].update({
             id: prev.id,
             chapter: String(row.chapter),
             source: String(row.source),
@@ -162,7 +171,7 @@ async function syncCourseChunks(client, outputs, session, identityId, args) {
           })
           if (!errors?.length) updated += 1
         } else {
-          const { errors } = await client.models.CourseChunk.create({
+          const { errors } = await client.models[materialModel].create({
             chapter: String(row.chapter),
             source: String(row.source),
             tier: row.tier ? String(row.tier) : null,
@@ -173,19 +182,19 @@ async function syncCourseChunks(client, outputs, session, identityId, args) {
             chunkKey: row.chunkKey,
           })
           if (!errors?.length) created += 1
-          else console.error(`CourseChunk create failed ${row.chunkKey}`, errors)
+          else console.error(`${materialModel} create failed ${row.chunkKey}`, errors)
         }
       }),
     )
     if ((i + CHUNK_BATCH) % 100 < CHUNK_BATCH || i + CHUNK_BATCH >= rows.length) {
       console.log(
-        `  CourseChunks progress ${Math.min(i + CHUNK_BATCH, rows.length)}/${rows.length}`,
+        `  ${materialModel} progress ${Math.min(i + CHUNK_BATCH, rows.length)}/${rows.length}`,
       )
     }
   }
 
   console.log(
-    `Embeddings: S3 ok; CourseChunks created=${created} updated=${updated} deleted=${deleted}`,
+    `Embeddings: S3 ok; ${materialModel} created=${created} updated=${updated} deleted=${deleted}`,
   )
   return { uploaded: 1, created: created + updated, deleted }
 }
@@ -196,7 +205,7 @@ async function main() {
   const password = process.env.INGEST_PASSWORD
   if (!args.dryRun && (!email || !password)) {
     console.error(
-      'Set INGEST_EMAIL and INGEST_PASSWORD for the Cognito user that should own materials.',
+      'Set INGEST_EMAIL and INGEST_PASSWORD for the Cognito user that owns the class library upload.',
     )
     process.exit(1)
   }
@@ -215,6 +224,14 @@ async function main() {
   const identityId = session.identityId
   if (!identityId) throw new Error('Missing identityId')
 
+  const root = libraryRoot(args.personal, identityId)
+  const materialModel = args.personal ? 'Material' : 'ClassMaterial'
+  console.log(
+    args.personal
+      ? 'Mode: personal (private, not shared with classmates)'
+      : 'Mode: class library (shared read for all signed-in classmates)',
+  )
+
   const uploads = []
   if (!args.embeddingsOnly) {
     if (!args.chaptersOnly) {
@@ -223,7 +240,7 @@ async function main() {
         uploads.push({
           label: row.source,
           localPath: row.outPath,
-          s3Key: `private/materials/${identityId}/course-pack/by-file/${path.basename(row.outPath)}`,
+          s3Key: `${root}/course-pack/by-file/${path.basename(row.outPath)}`,
           contentType: 'text/plain; charset=utf-8',
           indexMaterial: args.indexFiles,
         })
@@ -237,7 +254,7 @@ async function main() {
       uploads.push({
         label: name,
         localPath: path.join(BY_CHAPTER, name),
-        s3Key: `private/materials/${identityId}/course-pack/by-chapter/${name}`,
+        s3Key: `${root}/course-pack/by-chapter/${name}`,
         contentType: 'text/markdown; charset=utf-8',
         indexMaterial: true,
       })
@@ -248,7 +265,7 @@ async function main() {
   console.log(
     args.embeddingsOnly
       ? 'Skipping text upload (--embeddings-only)…'
-      : `Uploading ${uploads.length} text artifacts (${indexCount} Material rows)…`,
+      : `Uploading ${uploads.length} text artifacts (${indexCount} ${materialModel} rows)…`,
   )
   let uploaded = 0
   let indexed = 0
@@ -262,7 +279,7 @@ async function main() {
 
     if (args.dryRun) {
       console.log(
-        `DRY ${item.s3Key} (${text.length} chars)${item.indexMaterial ? ' [Material]' : ''}`,
+        `DRY ${item.s3Key} (${text.length} chars)${item.indexMaterial ? ` [${materialModel}]` : ''}`,
       )
       uploaded += 1
       if (item.indexMaterial) indexed += 1
@@ -277,7 +294,7 @@ async function main() {
     uploaded += 1
 
     if (item.indexMaterial) {
-      const { errors } = await client.models.Material.create({
+      const { errors } = await client.models[materialModel].create({
         filename: item.label,
         contentType: item.contentType,
         sizeBytes: Buffer.byteLength(body, 'utf8'),
@@ -287,7 +304,7 @@ async function main() {
         uploadedAt: new Date().toISOString(),
       })
       if (errors?.length) {
-        console.error(`Material create failed for ${item.label}`, errors)
+        console.error(`${materialModel} create failed for ${item.label}`, errors)
       } else {
         indexed += 1
       }
@@ -307,7 +324,9 @@ async function main() {
   if (!args.dryRun) {
     await signOut()
   }
-  console.log(`Done. Uploaded ${uploaded} to S3, indexed ${indexed} Material rows.`)
+  console.log(
+    `Done. Uploaded ${uploaded} to S3, indexed ${indexed} ${materialModel} rows.`,
+  )
 }
 
 main().catch(async (err) => {

@@ -70,6 +70,43 @@ const schema = a.schema({
     })
     .authorization((allow) => [allow.owner()]),
 
+  /**
+   * Shared class textbook library. Any signed-in classmate can read;
+   * only the uploading owner can create/update/delete.
+   */
+  ClassMaterial: a
+    .model({
+      filename: a.string().required(),
+      contentType: a.string().required(),
+      sizeBytes: a.integer().required(),
+      s3Key: a.string().required(),
+      extractedText: a.string(),
+      extractStatus: a.enum(['pending', 'ready', 'failed']),
+      extractError: a.string(),
+      uploadedAt: a.datetime().required(),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read']),
+    ]),
+
+  /** Shared class RAG chunks (authenticated read; owner write). */
+  ClassChunk: a
+    .model({
+      chapter: a.string().required(),
+      source: a.string().required(),
+      tier: a.string(),
+      text: a.string().required(),
+      embeddingJson: a.string().required(),
+      charStart: a.integer(),
+      charEnd: a.integer(),
+      chunkKey: a.string().required(),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read']),
+    ]),
+
   /** Client-captured runtime errors (owner-isolated; no secrets). */
   ErrorLog: a
     .model({

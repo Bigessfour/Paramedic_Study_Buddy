@@ -1,5 +1,6 @@
 import type { Schema } from '../../amplify/data/resource'
 import { dataClient } from '@/lib/amplifyData'
+import { listStudyChunks } from '@/lib/listAll'
 import {
   selectMaterialContext,
   tokenizeQuery,
@@ -46,22 +47,9 @@ function parseEmbedding(json: string | null | undefined): number[] | null {
   }
 }
 
-/** Paginate all owner CourseChunk rows (embeddings included). */
+/** Personal + class library chunks (embeddings included). */
 export async function listAllCourseChunks(pageSize = 100): Promise<CourseChunk[]> {
-  const out: CourseChunk[] = []
-  let nextToken: string | null | undefined
-  do {
-    const page = await dataClient.models.CourseChunk.list({
-      limit: pageSize,
-      nextToken: nextToken ?? undefined,
-    })
-    if (page.errors?.length) {
-      throw new Error(page.errors.map((err: { message: string }) => err.message).join('; '))
-    }
-    out.push(...(page.data ?? []))
-    nextToken = page.nextToken
-  } while (nextToken)
-  return out
+  return listStudyChunks(pageSize)
 }
 
 export function chaptersFromScope(scope: string): Set<string> | null {
