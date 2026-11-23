@@ -60,6 +60,7 @@ export function PracticeTestPage() {
   const [scope, setScope] = useState('Chapters on airway and ventilation')
   const [questionCount, setQuestionCount] = useState(5)
   const [mcPercent, setMcPercent] = useState(60)
+  const [courseFormat, setCourseFormat] = useState(false)
   const [examMode, setExamMode] = useState(false)
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(0)
   const [practiceMode, setPracticeMode] = useState<PracticeMode>('practice')
@@ -93,6 +94,10 @@ export function PracticeTestPage() {
     const countParam = searchParams.get('count')
     if (countParam) {
       setQuestionCount(clampInt(Number(countParam), 3, 15, 5))
+    }
+    const courseFormatParam = searchParams.get('courseFormat')
+    if (courseFormatParam === '1' || courseFormatParam === 'true') {
+      setCourseFormat(true)
     }
   }, [searchParams])
 
@@ -293,15 +298,20 @@ export function PracticeTestPage() {
       }
 
       const safeCount = clampInt(questionCount, 3, 15, 5)
-      const safeMc = clampInt(mcPercent, 0, 100, 60)
+      const safeMc = courseFormat
+        ? 100
+        : clampInt(mcPercent, 0, 100, 60)
       setQuestionCount(safeCount)
-      setMcPercent(safeMc)
+      if (!courseFormat) {
+        setMcPercent(safeMc)
+      }
 
       const { data, errors } = await dataClient.mutations.generatePracticeTest({
         scope: scope.trim(),
         questionCount: safeCount,
         mcPercent: safeMc,
         context: selected.context,
+        ...(courseFormat ? { courseFormat: true } : {}),
       })
       if (errors?.length) {
         throw new Error(errors.map((e) => e.message).join('; '))
@@ -331,6 +341,7 @@ export function PracticeTestPage() {
         mode: examMode ? 'exam' : 'practice',
         questionCount: nextQuestions.length,
         examMode,
+        courseFormat,
       })
       setPhase('taking')
     } catch (err) {
@@ -512,42 +523,63 @@ export function PracticeTestPage() {
               </div>
 
               {practiceMode === 'practice' ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="count">Number of questions</Label>
-                    <Input
-                      id="count"
-                      type="number"
-                      min={3}
-                      max={15}
-                      value={questionCount}
-                      onChange={(e) =>
-                        setQuestionCount(
-                          clampInt(Number(e.target.value), 3, 15, 5),
-                        )
-                      }
-                      onBlur={() =>
-                        setQuestionCount((n) => clampInt(n, 3, 15, 5))
-                      }
-                    />
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="count">Number of questions</Label>
+                      <Input
+                        id="count"
+                        type="number"
+                        min={3}
+                        max={15}
+                        value={questionCount}
+                        onChange={(e) =>
+                          setQuestionCount(
+                            clampInt(Number(e.target.value), 3, 15, 5),
+                          )
+                        }
+                        onBlur={() =>
+                          setQuestionCount((n) => clampInt(n, 3, 15, 5))
+                        }
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="mc">Multiple choice %</Label>
+                      <Input
+                        id="mc"
+                        type="number"
+                        min={0}
+                        max={100}
+                        disabled={courseFormat}
+                        value={courseFormat ? 100 : mcPercent}
+                        onChange={(e) =>
+                          setMcPercent(
+                            clampInt(Number(e.target.value), 0, 100, 60),
+                          )
+                        }
+                        onBlur={() =>
+                          setMcPercent((n) => clampInt(n, 0, 100, 60))
+                        }
+                      />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="mc">Multiple choice %</Label>
-                    <Input
-                      id="mc"
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={mcPercent}
-                      onChange={(e) =>
-                        setMcPercent(clampInt(Number(e.target.value), 0, 100, 60))
-                      }
-                      onBlur={() =>
-                        setMcPercent((n) => clampInt(n, 0, 100, 60))
-                      }
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={courseFormat}
+                      onChange={(e) => setCourseFormat(e.target.checked)}
                     />
-                  </div>
-                </div>
+                    <span>
+                      <span className="font-medium">Match course format</span>
+                      <span className="text-muted-foreground mt-1 block text-xs">
+                        {courseFormat
+                          ? 'Questions will mirror the Navigate2-style exam: 100% select-one multiple choice (recall sentence-completion and reassessment clinical scenarios with four plausible options).'
+                          : 'Optional: align with the course platform’s all–multiple-choice exam style.'}
+                      </span>
+                    </span>
+                  </label>
+                </>
               ) : (
                 <p className="text-muted-foreground text-sm">
                   Generates a short vignette plus ordered written decision steps

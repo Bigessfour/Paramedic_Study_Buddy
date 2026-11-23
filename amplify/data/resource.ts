@@ -109,6 +109,7 @@ const schema = a.schema({
       questionCount: a.integer().required(),
       mcPercent: a.integer().required(),
       context: a.string().required(),
+      courseFormat: a.boolean(),
     })
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])
