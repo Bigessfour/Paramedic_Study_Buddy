@@ -19,7 +19,34 @@ export function attemptToMarkdown(
   if (attempt.usedSampleContext) {
     lines.push(`- **Context:** sample notes`)
   }
+  if (payload.mode) {
+    lines.push(`- **Mode:** ${payload.mode}`)
+  }
+  if (payload.verified) {
+    lines.push(
+      `- **Verified:** course-material grounding${
+        payload.chapter ? ` (chapter ${payload.chapter})` : ''
+      }`,
+    )
+  }
   lines.push('', '---', '')
+
+  const vignettes =
+    payload.vignettes?.length
+      ? payload.vignettes
+      : payload.vignette
+        ? [payload.vignette]
+        : []
+  for (const [i, text] of vignettes.entries()) {
+    lines.push(
+      vignettes.length > 1 ? `## Vignette ${i + 1}` : '## Vignette',
+      '',
+      text,
+      '',
+      '---',
+      '',
+    )
+  }
 
   const gradeById = new Map(
     (payload.grades ?? []).map((g) => [g.id, g] as const),

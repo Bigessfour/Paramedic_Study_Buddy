@@ -3,7 +3,8 @@ import { defineFunction, secret } from '@aws-amplify/backend'
 export const xaiStudy = defineFunction({
   name: 'xai-study',
   entry: './handler.ts',
-  timeoutSeconds: 120,
+  // Verified vignette packs: generate + verify (+ retries) per scenario.
+  timeoutSeconds: 180,
   memoryMB: 512,
   environment: {
     XAI_API_KEY: secret('XAI_API_KEY'),

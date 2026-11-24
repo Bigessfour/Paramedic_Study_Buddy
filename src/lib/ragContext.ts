@@ -213,8 +213,12 @@ export async function selectRagContext(
     }
 
     const chapterFilter = chaptersFromScope(scope)
+    // Chapter "0" = course extras (policies, standalone lectures) — always eligible.
     const candidates = chapterFilter
-      ? chunks.filter((c) => chapterFilter.has(String(c.chapter)))
+      ? chunks.filter(
+          (c) =>
+            chapterFilter.has(String(c.chapter)) || String(c.chapter) === '0',
+        )
       : chunks
     const pool = candidates.length > 0 ? candidates : chunks
     const terms = tokenizeQuery(scope)
@@ -268,7 +272,10 @@ export async function selectRagContext(
 
     for (const chunk of topChunks) {
       if (total >= maxChars) break
-      const label = `Chapter ${chunk.chapter}`
+      const label =
+        String(chunk.chapter) === '0'
+          ? 'Course extras'
+          : `Chapter ${chunk.chapter}`
       const header = `Source: ${chunk.source} (${label})\n`
       const remaining = maxChars - total - header.length
       if (remaining <= 80) break

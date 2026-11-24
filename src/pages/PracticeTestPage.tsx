@@ -15,7 +15,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { dataClient } from '@/lib/amplifyData'
 import { listStudyMaterials } from '@/lib/listAll'
-import { listAllCourseChunks, selectRagContext } from '@/lib/ragContext'
+import {
+  chaptersFromScope,
+  listAllCourseChunks,
+  selectRagContext,
+} from '@/lib/ragContext'
 import { track } from '@/lib/telemetry'
 import { inferTopicsFromScope } from '@/lib/topics'
 import type { Schema } from '../../amplify/data/resource'
@@ -42,6 +46,14 @@ type ScenarioStep = {
   id: string
   prompt: string
   expectedPoints?: string
+  evidenceQuotes?: string[]
+}
+
+type VerifiedScenario = {
+  vignette: string
+  steps: ScenarioStep[]
+  verified: boolean
+  verificationNotes?: string
 }
 
 type WrittenGrade = {
@@ -51,6 +63,24 @@ type WrittenGrade = {
 }
 
 type Phase = 'setup' | 'taking' | 'results'
+
+function primaryChapterFromScope(scope: string): string | undefined {
+  const set = chaptersFromScope(scope)
+  if (!set || set.size === 0) return undefined
+  return [...set].sort((a, b) => Number(a) - Number(b))[0]
+}
+
+function questionsForScenario(
+  scenario: VerifiedScenario,
+  packIndex: number,
+): Question[] {
+  return scenario.steps.map((s, i) => ({
+    id: `v${packIndex + 1}_${String(s.id || `s${i + 1}`)}`,
+    type: 'written' as const,
+    stem: String(s.prompt ?? '').trim(),
+    rubric: String(s.expectedPoints ?? '').trim() || undefined,
+  }))
+}
 
 function isObjectiveCorrect(given: string, q: Question): boolean {
   if (!given || !q.correctAnswer) return false
@@ -87,7 +117,7 @@ export function PracticeTestPage() {
   const [searchParams] = useSearchParams()
   const [materials, setMaterials] = useState<Material[]>([])
   const [chunks, setChunks] = useState<CourseChunk[]>([])
-  const [scope, setScope] = useState('Chapters on airway and ventilation')
+  const [scope, setScope] = useState('Chapter 12 airway and ventilation')
   const [questionCount, setQuestionCount] = useState(5)
   const [mcPercent, setMcPercent] = useState(60)
   const [courseFormat, setCourseFormat] = useState(false)
@@ -111,10 +141,27 @@ export function PracticeTestPage() {
   const [mcTotal, setMcTotal] = useState(0)
   const [scorePercent, setScorePercent] = useState(0)
   const [vignette, setVignette] = useState('')
+  const [scenarioPack, setScenarioPack] = useState<VerifiedScenario[]>([])
+  const [scenarioIndex, setScenarioIndex] = useState(0)
+  /** Default 1 keeps each AppSync call under the ~30s resolver limit. */
+  const [packSize, setPackSize] = useState(1)
+  const [scenarioVerified, setScenarioVerified] = useState(false)
+  const [scenarioChapter, setScenarioChapter] = useState<string | undefined>()
+  const [verificationNotes, setVerificationNotes] = useState<string | undefined>()
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const autoSubmitRef = useRef(false)
-  const submitRef = useRef<(() => Promise<void>) | null>(null)
+  const submitRef = useRef<
+    ((opts?: { forcePartial?: boolean }) => Promise<void>) | null
+  >(null)
+
+  const currentScenarioQuestions = useMemo(() => {
+    if (practiceMode !== 'scenario' || scenarioPack.length === 0) {
+      return questions
+    }
+    const prefix = `v${scenarioIndex + 1}_`
+    return questions.filter((q) => q.id.startsWith(prefix))
+  }, [practiceMode, scenarioPack.length, scenarioIndex, questions])
 
   useEffect(() => {
     const scopeParam = searchParams.get('scope')
@@ -170,7 +217,7 @@ export function PracticeTestPage() {
     if (secondsLeft <= 0) {
       if (!autoSubmitRef.current) {
         autoSubmitRef.current = true
-        void submitRef.current?.()
+        void submitRef.current?.({ forcePartial: true })
       }
       return
     }
@@ -228,6 +275,10 @@ export function PracticeTestPage() {
     writtenCount: number
     mode: 'practice' | 'exam' | 'scenario'
     vignetteText?: string
+    verified?: boolean
+    chapter?: string
+    vignettes?: string[]
+    verificationNotes?: string
   }) {
     const topics = [
       ...new Set([...inferTopicsFromScope(scope), ...contextTopics]),
@@ -247,6 +298,10 @@ export function PracticeTestPage() {
       timeLimitMinutes: timeLimitMinutes > 0 ? timeLimitMinutes : undefined,
       elapsedSeconds,
       vignette: opts.vignetteText,
+      verified: opts.verified,
+      chapter: opts.chapter,
+      vignettes: opts.vignettes,
+      verificationNotes: opts.verificationNotes,
     })
 
     const { errors: saveErrors } = await dataClient.models.Attempt.create({
@@ -286,31 +341,106 @@ export function PracticeTestPage() {
       setContextTopics(selected.topics)
 
       if (practiceMode === 'scenario') {
-        const { data, errors } = await dataClient.mutations.generateClinicalScenario({
-          scope: scope.trim(),
-          context: selected.context,
-        })
-        if (errors?.length) {
-          throw new Error(errors.map((e) => e.message).join('; '))
+        const chapter = primaryChapterFromScope(scope)
+        if (!chapter) {
+          throw new Error(
+            'Clinical scenarios need a chapter in the scope (e.g. “Chapter 12”).',
+          )
         }
-        const payload =
-          typeof data === 'string'
-            ? (JSON.parse(data) as {
-                vignette?: string
-                steps?: ScenarioStep[]
-              })
-            : ((data ?? {}) as { vignette?: string; steps?: ScenarioStep[] })
-        const steps = Array.isArray(payload.steps) ? payload.steps : []
-        if (steps.length === 0) {
-          throw new Error('No scenario steps were generated. Try a broader scope.')
+        const safePack = clampInt(packSize, 1, 5, 1)
+        setPackSize(safePack)
+
+        // One vignette per AppSync call to stay under the ~30s resolver limit.
+        const pack: VerifiedScenario[] = []
+        for (let i = 0; i < safePack; i += 1) {
+          setError(
+            safePack > 1
+              ? `Generating verified vignette ${i + 1} of ${safePack}…`
+              : null,
+          )
+          const { data, errors } =
+            await dataClient.mutations.generateClinicalScenario({
+              scope: scope.trim(),
+              context: selected.context,
+              count: 1,
+              chapter,
+            })
+          if (errors?.length) {
+            throw new Error(errors.map((e) => e.message).join('; '))
+          }
+          const payload =
+            typeof data === 'string'
+              ? (JSON.parse(data) as {
+                  verified?: boolean
+                  vignette?: string
+                  steps?: ScenarioStep[]
+                  scenarios?: VerifiedScenario[]
+                  verificationNotes?: string
+                })
+              : ((data ?? {}) as {
+                  verified?: boolean
+                  vignette?: string
+                  steps?: ScenarioStep[]
+                  scenarios?: VerifiedScenario[]
+                  verificationNotes?: string
+                })
+
+          let batch: VerifiedScenario[] = Array.isArray(payload.scenarios)
+            ? payload.scenarios
+            : []
+          if (
+            batch.length === 0 &&
+            payload.vignette &&
+            Array.isArray(payload.steps)
+          ) {
+            batch = [
+              {
+                vignette: String(payload.vignette).trim(),
+                steps: payload.steps,
+                verified: payload.verified === true,
+                verificationNotes: payload.verificationNotes,
+              },
+            ]
+          }
+
+          const normalized = batch
+            .map((s) => ({
+              vignette: String(s.vignette ?? '').trim(),
+              steps: Array.isArray(s.steps) ? s.steps : [],
+              verified: s.verified === true,
+              verificationNotes:
+                s.verificationNotes ?? payload.verificationNotes,
+            }))
+            .filter((s) => s.vignette && s.steps.length > 0)
+
+          if (
+            payload.verified !== true ||
+            normalized.length === 0 ||
+            normalized.some((s) => !s.verified)
+          ) {
+            throw new Error(
+              'Scenario verification failed. Nothing was shown — try again.',
+            )
+          }
+          pack.push(...normalized)
         }
-        const nextQuestions: Question[] = steps.map((s, i) => ({
-          id: String(s.id || `s${i + 1}`),
-          type: 'written',
-          stem: String(s.prompt ?? '').trim(),
-          rubric: String(s.expectedPoints ?? '').trim() || undefined,
-        }))
-        setVignette(String(payload.vignette ?? '').trim())
+        setError(null)
+
+        if (pack.length === 0) {
+          throw new Error(
+            'No verified scenarios were returned. Try again or use a clearer chapter scope.',
+          )
+        }
+
+        const nextQuestions = pack.flatMap((s, idx) =>
+          questionsForScenario(s, idx),
+        )
+        setScenarioPack(pack)
+        setScenarioIndex(0)
+        setScenarioVerified(true)
+        setScenarioChapter(chapter)
+        setVerificationNotes(pack[0]?.verificationNotes)
+        setVignette(pack[0].vignette)
         setQuestions(nextQuestions)
         setAnswers({})
         setWrittenGrades([])
@@ -321,7 +451,9 @@ export function PracticeTestPage() {
         track('practice_test_generated', {
           mode: 'scenario',
           questionCount: nextQuestions.length,
+          packSize: pack.length,
           examMode,
+          verified: true,
         })
         setPhase('taking')
         return
@@ -360,6 +492,11 @@ export function PracticeTestPage() {
       }
 
       setVignette('')
+      setScenarioPack([])
+      setScenarioIndex(0)
+      setScenarioVerified(false)
+      setScenarioChapter(undefined)
+      setVerificationNotes(undefined)
       setQuestions(nextQuestions)
       setAnswers({})
       setWrittenGrades([])
@@ -381,11 +518,44 @@ export function PracticeTestPage() {
     }
   }
 
-  async function onSubmitTest() {
+  async function onSubmitTest(opts?: { forcePartial?: boolean }) {
     setError(null)
+
+    const isScenarioPack =
+      practiceMode === 'scenario' && scenarioPack.length > 0
+    const onLastVignette =
+      !isScenarioPack || scenarioIndex >= scenarioPack.length - 1
+
+    if (isScenarioPack && !onLastVignette && !opts?.forcePartial) {
+      setError('Finish all vignettes in the pack before submitting.')
+      return
+    }
+
+    // Exam timer mid-pack: only score vignettes the student has reached.
+    const questionsToScore =
+      isScenarioPack && opts?.forcePartial && !onLastVignette
+        ? questions.filter((q) => {
+            const maxShown = scenarioIndex + 1
+            for (let i = 1; i <= maxShown; i += 1) {
+              if (q.id.startsWith(`v${i}_`)) return true
+            }
+            return false
+          })
+        : questions
+
+    if (isScenarioPack && !opts?.forcePartial) {
+      const unanswered = questionsToScore.some(
+        (q) => !(answers[q.id] ?? '').trim(),
+      )
+      if (unanswered) {
+        setError('Answer each step before submitting.')
+        return
+      }
+    }
+
     setBusy(true)
     try {
-      const objective = questions.filter(
+      const objective = questionsToScore.filter(
         (q) => q.type === 'multiple_choice' || q.type === 'true_false',
       )
       let correct = 0
@@ -394,7 +564,7 @@ export function PracticeTestPage() {
         if (isObjectiveCorrect(given, q)) correct += 1
       }
 
-      const written = questions.filter((q) => q.type === 'written')
+      const written = questionsToScore.filter((q) => q.type === 'written')
       const grades = await gradeWritten(written, contextUsed)
       const gradeById = new Map(grades.map((g) => [g.id, g.score]))
       const writtenScores = written.map((q) => gradeById.get(q.id) ?? 0)
@@ -416,8 +586,20 @@ export function PracticeTestPage() {
             ? 'exam'
             : 'practice'
 
+      const vignettesScored =
+        mode === 'scenario' && scenarioPack.length > 0
+          ? scenarioPack
+              .slice(
+                0,
+                opts?.forcePartial && !onLastVignette
+                  ? scenarioIndex + 1
+                  : scenarioPack.length,
+              )
+              .map((s) => s.vignette)
+          : undefined
+
       await finishAttempt({
-        questions,
+        questions: questionsToScore,
         grades,
         correct,
         objectiveCount: objective.length,
@@ -425,11 +607,20 @@ export function PracticeTestPage() {
         writtenAvg,
         writtenCount: written.length,
         mode,
-        vignetteText: vignette || undefined,
+        vignetteText:
+          vignettesScored?.[0] || vignette || undefined,
+        verified: mode === 'scenario' ? scenarioVerified : undefined,
+        chapter: mode === 'scenario' ? scenarioChapter : undefined,
+        vignettes: vignettesScored,
+        verificationNotes:
+          mode === 'scenario' ? verificationNotes : undefined,
       })
       if (mode === 'scenario') {
         track('scenario_completed', {
-          questionCount: questions.length,
+          questionCount: questionsToScore.length,
+          packSize: vignettesScored?.length || scenarioPack.length || 1,
+          verified: scenarioVerified,
+          partial: Boolean(opts?.forcePartial && !onLastVignette),
           scorePercent: Math.round(overall * 10) / 10,
         })
       }
@@ -540,7 +731,12 @@ export function PracticeTestPage() {
                     type="radio"
                     name="practiceMode"
                     checked={practiceMode === 'scenario'}
-                    onChange={() => setPracticeMode('scenario')}
+                    onChange={() => {
+                      setPracticeMode('scenario')
+                      if (!primaryChapterFromScope(scope)) {
+                        setScope('Chapter 12 airway and ventilation')
+                      }
+                    }}
                   />
                   Clinical scenario
                 </label>
@@ -605,10 +801,38 @@ export function PracticeTestPage() {
                   </label>
                 </>
               ) : (
-                <p className="text-muted-foreground text-sm">
-                  Generates a short vignette plus ordered written decision steps
-                  grounded in your materials.
-                </p>
+                <div className="space-y-3">
+                  <p className="text-muted-foreground text-sm">
+                    Generates a chapter vignette pack with ordered written
+                    decision steps. Each scenario is checked against your course
+                    material before you see it (study aid — not instructor
+                    sign-off).
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    Scope must name a chapter (example:{' '}
+                    <span className="text-foreground">Chapter 12 airway</span>
+                    ). Packs larger than 1 generate one verified vignette per
+                    request (avoids AppSync timeouts).
+                  </p>
+                  <div className="flex flex-col gap-2 sm:max-w-xs">
+                    <Label htmlFor="packSize">Vignettes in pack</Label>
+                    <Input
+                      id="packSize"
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={packSize}
+                      onChange={(e) =>
+                        setPackSize(
+                          clampInt(Number(e.target.value), 1, 5, 1),
+                        )
+                      }
+                      onBlur={() =>
+                        setPackSize((n) => clampInt(n, 1, 5, 1))
+                      }
+                    />
+                  </div>
+                </div>
               )}
 
               <div className="border-border space-y-3 rounded-md border p-3">
@@ -645,7 +869,7 @@ export function PracticeTestPage() {
                   : busy
                     ? 'Generating…'
                     : practiceMode === 'scenario'
-                      ? 'Generate scenario'
+                      ? 'Generate verified pack'
                       : 'Generate practice test'}
               </Button>
             </CardFooter>
@@ -675,6 +899,14 @@ export function PracticeTestPage() {
             {practiceMode === 'scenario' ? (
               <Badge variant="outline">Scenario</Badge>
             ) : null}
+            {practiceMode === 'scenario' && scenarioVerified ? (
+              <Badge variant="secondary">Checked against course material</Badge>
+            ) : null}
+            {practiceMode === 'scenario' && scenarioPack.length > 1 ? (
+              <Badge variant="outline">
+                Vignette {scenarioIndex + 1} of {scenarioPack.length}
+              </Badge>
+            ) : null}
             {secondsLeft != null ? (
               <Badge variant={secondsLeft <= 60 ? 'destructive' : 'secondary'}>
                 Time left {formatTimer(secondsLeft)}
@@ -686,6 +918,12 @@ export function PracticeTestPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Clinical vignette</CardTitle>
+                {scenarioVerified ? (
+                  <CardDescription>
+                    Automated grounding check passed
+                    {scenarioChapter ? ` · Chapter ${scenarioChapter}` : ''}
+                  </CardDescription>
+                ) : null}
               </CardHeader>
               <CardContent>
                 <p className="whitespace-pre-wrap text-sm">{vignette}</p>
@@ -702,7 +940,10 @@ export function PracticeTestPage() {
             </Alert>
           ) : null}
 
-          {questions.map((q, index) => (
+          {(practiceMode === 'scenario'
+            ? currentScenarioQuestions
+            : questions
+          ).map((q, index) => (
             <Card key={q.id}>
               <CardHeader>
                 <CardTitle className="text-base">
@@ -742,10 +983,36 @@ export function PracticeTestPage() {
               </CardContent>
             </Card>
           ))}
-          <div className="flex gap-2">
-            <Button type="submit" disabled={busy}>
-              {busy ? 'Scoring…' : 'Submit answers'}
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            {practiceMode === 'scenario' &&
+            scenarioIndex < scenarioPack.length - 1 ? (
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const unanswered = currentScenarioQuestions.some(
+                    (q) => !(answers[q.id] ?? '').trim(),
+                  )
+                  if (unanswered) {
+                    setError('Answer each step before the next vignette.')
+                    return
+                  }
+                  setError(null)
+                  const next = scenarioIndex + 1
+                  setScenarioIndex(next)
+                  setVignette(scenarioPack[next]?.vignette ?? '')
+                  setVerificationNotes(
+                    scenarioPack[next]?.verificationNotes ?? verificationNotes,
+                  )
+                }}
+              >
+                Next vignette
+              </Button>
+            ) : (
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Scoring…' : 'Submit answers'}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -756,6 +1023,11 @@ export function PracticeTestPage() {
                 setAnswers({})
                 setWrittenGrades([])
                 setVignette('')
+                setScenarioPack([])
+                setScenarioIndex(0)
+                setScenarioVerified(false)
+                setScenarioChapter(undefined)
+                setVerificationNotes(undefined)
                 setSecondsLeft(null)
                 setStartedAt(null)
                 setError(null)
@@ -799,16 +1071,32 @@ export function PracticeTestPage() {
             </CardFooter>
           </Card>
 
-          {vignette ? (
-            <Card>
+          {scenarioVerified ? (
+            <Badge variant="secondary" className="w-fit">
+              Checked against course material
+              {scenarioChapter ? ` · Chapter ${scenarioChapter}` : ''}
+            </Badge>
+          ) : null}
+
+          {(scenarioPack.length > 0
+            ? scenarioPack.map((s) => s.vignette)
+            : vignette
+              ? [vignette]
+              : []
+          ).map((text, i) => (
+            <Card key={`vignette-${i}`}>
               <CardHeader>
-                <CardTitle className="text-base">Vignette</CardTitle>
+                <CardTitle className="text-base">
+                  {scenarioPack.length > 1
+                    ? `Vignette ${i + 1}`
+                    : 'Vignette'}
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="whitespace-pre-wrap text-sm">{vignette}</p>
+                <p className="whitespace-pre-wrap text-sm">{text}</p>
               </CardContent>
             </Card>
-          ) : null}
+          ))}
 
           {questions.map((q) => {
             const grade = writtenGrades.find((g) => g.id === q.id)

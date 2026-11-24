@@ -33,7 +33,11 @@ function redactKey(message: string): string {
   return message.replace(/xai-[A-Za-z0-9_-]+/g, 'xai-[REDACTED]')
 }
 
-async function callXai(system: string, user: string): Promise<string> {
+async function callXai(
+  system: string,
+  user: string,
+  temperature = 0.3,
+): Promise<string> {
   const apiKey = process.env.XAI_API_KEY
   if (!apiKey) {
     throw new Error('XAI_API_KEY is not configured on the server')
@@ -48,7 +52,7 @@ async function callXai(system: string, user: string): Promise<string> {
     },
     body: JSON.stringify({
       model,
-      temperature: 0.3,
+      temperature,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: system },
@@ -590,13 +594,174 @@ Return JSON:
   return { cards }
 }
 
-async function generateClinicalScenario(args: Record<string, unknown>) {
-  const scope = requireString(args.scope, 'scope')
-  const context = requireString(args.context, 'context')
+type ScenarioStepOut = {
+  id: string
+  prompt: string
+  expectedPoints: string
+  evidenceQuotes: string[]
+}
 
-  const system = `You are a paramedic clinical educator. Create ONE lightweight scenario grounded ONLY in the provided course material. Return JSON only.`
-  const user = `Scope: ${scope}
+type ScenarioCandidate = {
+  vignette: string
+  steps: ScenarioStepOut[]
+}
 
+type VerifiedScenario = ScenarioCandidate & {
+  verified: true
+  verificationNotes: string
+}
+
+function clampCount(value: unknown, min: number, max: number, fallback: number) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+function normalizeMatchText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+/** Evidence quote must appear in full in context (whitespace-normalized). */
+function quoteGroundedInContext(quote: string, context: string): boolean {
+  const q = normalizeMatchText(quote)
+  if (q.length < 12) return false
+  return normalizeMatchText(context).includes(q)
+}
+
+function parseScenarioCandidate(parsed: Record<string, unknown>): ScenarioCandidate {
+  const vignette = String(parsed.vignette ?? '').trim()
+  const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : []
+  const steps: ScenarioStepOut[] = []
+  for (const [index, item] of rawSteps.entries()) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const prompt = String(row.prompt ?? row.question ?? '').trim()
+    if (!prompt) continue
+    const expectedPoints = String(
+      row.expectedPoints ?? row.rubric ?? row.points ?? '',
+    ).trim()
+    const quotesRaw = row.evidenceQuotes ?? row.evidence ?? row.quotes
+    const evidenceQuotes = Array.isArray(quotesRaw)
+      ? quotesRaw.map((q) => String(q ?? '').trim()).filter(Boolean).slice(0, 4)
+      : []
+    steps.push({
+      id: String(row.id ?? `s${index + 1}`).trim() || `s${index + 1}`,
+      prompt,
+      expectedPoints,
+      evidenceQuotes,
+    })
+    if (steps.length >= 5) break
+  }
+  return { vignette, steps }
+}
+
+function deterministicScenarioIssues(
+  candidate: ScenarioCandidate,
+  context: string,
+): string[] {
+  const issues: string[] = []
+  if (!candidate.vignette || candidate.vignette.length < 40) {
+    issues.push('Vignette missing or too short')
+  }
+  if (candidate.steps.length < 3 || candidate.steps.length > 5) {
+    issues.push('Need 3 to 5 steps')
+  }
+  for (const [i, step] of candidate.steps.entries()) {
+    if (!step.prompt) issues.push(`Step ${i + 1}: missing prompt`)
+    if (!step.expectedPoints) {
+      issues.push(`Step ${i + 1}: missing expectedPoints`)
+    }
+    if (step.evidenceQuotes.length === 0) {
+      issues.push(`Step ${i + 1}: missing evidenceQuotes`)
+    } else {
+      const grounded = step.evidenceQuotes.some((q) =>
+        quoteGroundedInContext(q, context),
+      )
+      if (!grounded) {
+        issues.push(
+          `Step ${i + 1}: evidenceQuotes not found in course context`,
+        )
+      }
+    }
+  }
+  return issues
+}
+
+async function verifyScenarioWithModel(
+  candidate: ScenarioCandidate,
+  context: string,
+): Promise<{ ok: boolean; issues: string[]; notes: string }> {
+  const system = `You are a paramedic course-material auditor. Decide if a clinical scenario is fully grounded in the provided context. Reject invented protocols, doses, or facts not supported by the context. Return JSON only.`
+  const user = `Course material context:
+---
+${context.slice(0, 22000)}
+---
+
+Candidate scenario JSON:
+${JSON.stringify(candidate).slice(0, 8000)}
+
+Return JSON:
+{
+  "ok": true,
+  "issues": [],
+  "stepGrounded": [true, true, true],
+  "notes": "one short sentence"
+}
+
+Set ok=false if any step is ungrounded, expectedPoints invent unsupported facts, or the vignette contradicts the context.`
+
+  const content = await callXai(system, user, 0.1)
+  const parsed = parseJsonObject(content)
+  const issues = Array.isArray(parsed.issues)
+    ? parsed.issues.map((x) => String(x)).filter(Boolean).slice(0, 12)
+    : []
+  const stepGrounded = Array.isArray(parsed.stepGrounded)
+    ? parsed.stepGrounded.map((x) => x === true)
+    : []
+  if (stepGrounded.length !== candidate.steps.length) {
+    issues.push(
+      `Verifier must return stepGrounded for all ${candidate.steps.length} steps`,
+    )
+  } else if (stepGrounded.some((g) => !g)) {
+    issues.push('Verifier marked one or more steps as ungrounded')
+  }
+  if (parsed.ok !== true) {
+    issues.push('Verifier did not set ok=true')
+  }
+  const ok = parsed.ok === true && issues.length === 0
+  return {
+    ok,
+    issues,
+    notes: String(parsed.notes ?? '').trim().slice(0, 240),
+  }
+}
+
+async function generateOneVerifiedScenario(opts: {
+  scope: string
+  context: string
+  chapter?: string
+  priorVignettes: string[]
+}): Promise<VerifiedScenario> {
+  const context = opts.context
+  const maxAttempts = 3 // initial + 2 retries
+  let lastIssues: string[] = []
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const system = `You are a paramedic clinical educator. Create ONE lightweight scenario grounded ONLY in the provided course material. Every clinical claim in expectedPoints must be supportable by short evidenceQuotes copied from the context. Return JSON only.`
+    const chapterLine = opts.chapter
+      ? `Chapter focus: ${opts.chapter}\n`
+      : ''
+    const avoidLine =
+      opts.priorVignettes.length > 0
+        ? `Do NOT repeat these prior vignettes:\n- ${opts.priorVignettes.map((v) => v.slice(0, 120)).join('\n- ')}\n`
+        : ''
+    const fixLine =
+      lastIssues.length > 0
+        ? `Previous attempt failed verification. Fix these issues:\n- ${lastIssues.join('\n- ')}\n`
+        : ''
+
+    const user = `Scope: ${opts.scope}
+${chapterLine}${avoidLine}${fixLine}
 Course material context:
 ---
 ${context.slice(0, 24000)}
@@ -609,37 +774,86 @@ Return JSON:
     {
       "id": "s1",
       "prompt": "What is your next assessment or action?",
-      "expectedPoints": "Key points for grading this short answer"
+      "expectedPoints": "Key points for grading this short answer",
+      "evidenceQuotes": ["exact or near-exact span copied from the context"]
     }
   ]
 }
 
-Provide 3 to 5 ordered steps. Keep prompts answerable in 1-3 sentences.`
+Provide 3 to 5 ordered steps. Keep prompts answerable in 1-3 sentences.
+Each step MUST include 1-3 evidenceQuotes that appear in the context above.`
 
-  const content = await callXai(system, user)
-  const parsed = parseJsonObject(content)
-  const vignette = String(parsed.vignette ?? '').trim()
-  const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : []
-  const steps: Array<{ id: string; prompt: string; expectedPoints: string }> =
-    []
-  for (const [index, item] of rawSteps.entries()) {
-    if (!item || typeof item !== 'object') continue
-    const row = item as Record<string, unknown>
-    const prompt = String(row.prompt ?? row.question ?? '').trim()
-    if (!prompt) continue
-    steps.push({
-      id: String(row.id ?? `s${index + 1}`).trim() || `s${index + 1}`,
-      prompt,
-      expectedPoints: String(
-        row.expectedPoints ?? row.rubric ?? row.points ?? '',
-      ).trim(),
+    const content = await callXai(system, user, attempt === 0 ? 0.35 : 0.25)
+    const candidate = parseScenarioCandidate(parseJsonObject(content))
+    if (!candidate.vignette || candidate.steps.length === 0) {
+      lastIssues = ['Model returned an incomplete clinical scenario']
+      continue
+    }
+
+    const deterministic = deterministicScenarioIssues(candidate, context)
+    if (deterministic.length > 0) {
+      lastIssues = deterministic
+      continue
+    }
+
+    const verified = await verifyScenarioWithModel(candidate, context)
+    if (!verified.ok) {
+      lastIssues =
+        verified.issues.length > 0
+          ? verified.issues
+          : ['Verifier rejected the scenario']
+      continue
+    }
+
+    return {
+      ...candidate,
+      verified: true,
+      verificationNotes:
+        verified.notes || 'Passed automated course-material grounding checks',
+    }
+  }
+
+  throw new Error(
+    `Could not generate a verified scenario after ${maxAttempts} attempts${
+      lastIssues.length ? `: ${lastIssues.slice(0, 3).join('; ')}` : ''
+    }. Try a clearer chapter scope or try again.`,
+  )
+}
+
+async function generateClinicalScenario(args: Record<string, unknown>) {
+  const scope = requireString(args.scope, 'scope')
+  const context = requireString(args.context, 'context')
+  const count = clampCount(args.count, 1, 5, 1)
+  const chapter =
+    typeof args.chapter === 'string' && args.chapter.trim()
+      ? args.chapter.trim()
+      : undefined
+
+  const scenarios: VerifiedScenario[] = []
+  const priorVignettes: string[] = []
+
+  for (let i = 0; i < count; i += 1) {
+    const scenario = await generateOneVerifiedScenario({
+      scope,
+      context,
+      chapter,
+      priorVignettes,
     })
-    if (steps.length >= 5) break
+    scenarios.push(scenario)
+    priorVignettes.push(scenario.vignette)
   }
-  if (!vignette || steps.length === 0) {
-    throw new Error('Model returned an incomplete clinical scenario')
+
+  // Backward-compatible top-level fields from the first scenario.
+  const first = scenarios[0]
+  return {
+    verified: true as const,
+    count: scenarios.length,
+    chapter: chapter ?? null,
+    scenarios,
+    vignette: first.vignette,
+    steps: first.steps,
+    verificationNotes: first.verificationNotes,
   }
-  return { vignette, steps }
 }
 
 export const handler = async (event: AppSyncEvent) => {

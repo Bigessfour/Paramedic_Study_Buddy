@@ -15,6 +15,7 @@
  *   AWS_REGION / BEDROCK_REGION (default us-east-2)
  *   EMBED_CHUNK_SIZE=800 EMBED_CHUNK_OVERLAP=120 EMBED_MAX_CHAPTER_CHARS=40000
  *   (Chapter 1 uses up to 200000 when it contains the table-gap supplement.)
+ *   EMBED_MAX_EXTRAS_CHARS=600000  (chapter-00-* course extras without chapter #)
  */
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -42,6 +43,9 @@ const MAX_CHAPTER_CHARS = Number(
 )
 const MAX_CHAPTER_CHARS_SUPPLEMENTED = Number(
   process.env.EMBED_MAX_CHAPTER_CHARS_SUPPLEMENTED || 200_000,
+)
+const MAX_EXTRAS_CHARS = Number(
+  process.env.EMBED_MAX_EXTRAS_CHARS || 600_000,
 )
 const DIMENSIONS = 1024
 const CONCURRENCY = Number(process.env.EMBED_CONCURRENCY || 4)
@@ -94,8 +98,13 @@ function chunkText(text, size = CHUNK_SIZE, overlap = OVERLAP) {
 }
 
 function chapterLabel(filename) {
+  // chapter-00-* extras share chapter "0" so retrieval can always include them.
   const m = filename.match(/chapter-(\d+)/i)
   return m ? String(Number(m[1])) : filename
+}
+
+function isExtrasBundle(filename) {
+  return /^chapter-00/i.test(filename)
 }
 
 async function loadExisting() {
@@ -161,7 +170,7 @@ async function main() {
 
   await fs.mkdir(EMBED_DIR, { recursive: true })
   let files = (await fs.readdir(BY_CHAPTER))
-    .filter((n) => /^chapter-\d+\.md$/i.test(n))
+    .filter((n) => /^chapter-\d+/i.test(n) && n.endsWith('.md'))
     .sort()
   if (args.chapters?.size) {
     files = files.filter((n) => args.chapters.has(chapterLabel(n)))
@@ -199,10 +208,18 @@ async function main() {
       /Course supplement|1\.\s*Manpower[\s\S]{0,400}15\.\s*Mutual aid/i.test(
         body,
       )
-    const cap = hasSupplement
-      ? MAX_CHAPTER_CHARS_SUPPLEMENTED
-      : MAX_CHAPTER_CHARS
+    const extras = isExtrasBundle(name)
+    const cap = extras
+      ? MAX_EXTRAS_CHARS
+      : hasSupplement
+        ? MAX_CHAPTER_CHARS_SUPPLEMENTED
+        : MAX_CHAPTER_CHARS
     const full = normalized.slice(0, cap)
+    if (extras && normalized.length > cap) {
+      console.warn(
+        `  warn ${name}: truncated ${normalized.length} → ${cap} chars (raise EMBED_MAX_EXTRAS_CHARS)`,
+      )
+    }
     const chapter = chapterLabel(name)
     const parts = chunkText(full)
     for (const part of parts) {
@@ -213,7 +230,7 @@ async function main() {
         chunkKey,
         chapter,
         source: name,
-        tier: hasSupplement ? 'S' : 'A',
+        tier: extras ? 'F' : hasSupplement ? 'S' : 'A',
         text: part.text,
         charStart: part.charStart,
         charEnd: part.charEnd,

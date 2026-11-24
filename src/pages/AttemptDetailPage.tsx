@@ -20,6 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from 'cn'
 
@@ -155,16 +156,32 @@ export function AttemptDetailPage() {
         </Card>
       ) : null}
 
-      {payload.vignette ? (
-        <Card>
+      {payload.verified ? (
+        <Badge variant="secondary" className="w-fit">
+          Checked against course material
+          {payload.chapter ? ` · Chapter ${payload.chapter}` : ''}
+        </Badge>
+      ) : null}
+
+      {(payload.vignettes?.length
+        ? payload.vignettes
+        : payload.vignette
+          ? [payload.vignette]
+          : []
+      ).map((text, i) => (
+        <Card key={`vignette-${i}`}>
           <CardHeader>
-            <CardTitle className="text-base">Vignette</CardTitle>
+            <CardTitle className="text-base">
+              {(payload.vignettes?.length ?? 0) > 1
+                ? `Vignette ${i + 1}`
+                : 'Vignette'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-wrap text-sm">{payload.vignette}</p>
+            <p className="whitespace-pre-wrap text-sm">{text}</p>
           </CardContent>
         </Card>
-      ) : null}
+      ))}
 
       <div className="flex flex-col gap-4">
         {(payload.questions ?? []).map((q, index) => {

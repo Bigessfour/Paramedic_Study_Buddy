@@ -23,6 +23,11 @@ export type AttemptPayload = {
   timeLimitMinutes?: number
   elapsedSeconds?: number
   vignette?: string
+  /** Automated course-material grounding passed before student saw scenarios. */
+  verified?: boolean
+  chapter?: string
+  vignettes?: string[]
+  verificationNotes?: string
 }
 
 /** Normalize older prompt/choices payloads and current stem/options. */

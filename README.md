@@ -97,7 +97,8 @@ Status checklist: [`RAG_STATUS.md`](./RAG_STATUS.md). Live verification log: [`V
 
 ```bash
 npm run ingest:course:ocr    # PDF/DOCX/PPTX → course-context/ (Vision OCR on Mac)
-AWS_PROFILE=steve-copilot npm run embed:course   # Bedrock Titan → embeddings/chunks.jsonl
+# chapter-less files → chapter-00-*.md; rebuild only: node scripts/ingest-course-pack.mjs --rebuild-only
+AWS_PROFILE=steve npm run embed:course   # Bedrock Titan → embeddings/chunks.jsonl
 # set INGEST_EMAIL / INGEST_PASSWORD in .env.local (uploader Cognito user)
 npm run upload:course        # Shared class library: ClassMaterial + ClassChunk + class-library/ S3
 # text-only re-run: npm run upload:course -- --skip-embeddings
@@ -108,6 +109,10 @@ npm run upload:course        # Shared class library: ClassMaterial + ClassChunk 
 **Class library:** By default `upload:course` publishes to `ClassMaterial` / `ClassChunk` under `class-library/{identityId}/…`. Any signed-in classmate can **read** that library for Practice/Tutor/Flashcards. Personal PDF uploads on Materials stay owner-private. Attempts, tutor threads, and flashcard decks remain per-user.
 
 Embeddings use **Amazon Bedrock Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-d) for both batch embed and query-time `embedQuery`. Practice/Tutor prefer hybrid semantic+keyword retrieval when class or personal chunks exist; keyword fallback otherwise. Table-gap supplements (e.g. EMS Systems Act 15 components for Chapter 1) live under `scripts/course-supplements/` and are merged at ingest when extracts only cite Table 1-1.
+
+### Clinical scenarios (verified packs)
+
+Practice → **Clinical scenario** generates a live vignette pack (1–5, default 1) for a named chapter (scope like `Chapter 12`). The Lambda **generate → verify → retry** loop requires full evidence-quote matches and per-step `stepGrounded`; unverified scenarios are never shown (fail closed). Multi-vignette packs call the API once per vignette to stay under AppSync’s resolver time limit. Study aid for course-material fidelity — not instructor clinical sign-off.
 
 ---
 

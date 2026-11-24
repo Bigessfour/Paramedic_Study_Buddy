@@ -9,6 +9,7 @@
  *   node scripts/ingest-course-pack.mjs --ocr         # OCR sparse PDFs after native
  *   node scripts/ingest-course-pack.mjs --force       # re-extract even if hash matches
  *   node scripts/ingest-course-pack.mjs --limit 5
+ *   node scripts/ingest-course-pack.mjs --rebuild-only  # rebuild by-chapter (+ extras) from manifest
  */
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -75,12 +76,14 @@ function parseArgs(argv) {
     tiers: new Set(TIER_ORDER),
     ocr: false,
     force: false,
+    rebuildOnly: false,
     limit: Infinity,
   }
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i]
     if (a === '--ocr') args.ocr = true
     else if (a === '--force') args.force = true
+    else if (a === '--rebuild-only') args.rebuildOnly = true
     else if (a === '--tiers') {
       args.tiers = new Set(
         argv[++i].split(',').map((t) => t.trim().toUpperCase()),
@@ -88,6 +91,18 @@ function parseArgs(argv) {
     } else if (a === '--limit') args.limit = Number(argv[++i])
   }
   return args
+}
+
+/** Stable short id for chapter-less extras files (prefer leading pack number). */
+function extrasBundleName(source) {
+  const num = source.match(/^(\d+)\b/)
+  const slug = slugify(source)
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80)
+  if (num) return `chapter-00-${num[1].padStart(3, '0')}-${slug}.md`
+  return `chapter-00-${slug || 'extra'}.md`
 }
 
 /** Convert mammoth HTML to markdown-ish text, preserving tables as pipes. */
@@ -353,11 +368,27 @@ async function loadChapterSupplements(chapterText, chapter) {
 
 async function rebuildChapterBundles(manifestRows) {
   const byChapter = new Map()
+  const unassigned = []
   for (const row of manifestRows) {
     if (row.status !== 'ok' && row.status !== 'ok-partial') continue
-    if (row.chapter == null) continue
+    if (row.chapter == null) {
+      unassigned.push(row)
+      continue
+    }
     if (!byChapter.has(row.chapter)) byChapter.set(row.chapter, [])
     byChapter.get(row.chapter).push(row)
+  }
+
+  // Drop prior chapter-00-* extras so renames / removals do not leave orphans.
+  try {
+    const existing = await fs.readdir(BY_CHAPTER)
+    await Promise.all(
+      existing
+        .filter((n) => /^chapter-00/i.test(n))
+        .map((n) => fs.unlink(path.join(BY_CHAPTER, n))),
+    )
+  } catch {
+    // by-chapter may not exist yet
   }
 
   for (const [chapter, rows] of [...byChapter.entries()].sort(
@@ -392,11 +423,53 @@ async function rebuildChapterBundles(manifestRows) {
       `# Chapter ${chapter}\n\n${ordered.join('\n\n---\n\n')}\n`,
     )
   }
+
+  // Chapter-less pack files → one chapter-00-* bundle each so RAG embeds full text.
+  unassigned.sort((a, b) => a.source.localeCompare(b.source))
+  for (const row of unassigned) {
+    const body = await fs.readFile(row.outPath, 'utf8')
+    const withoutHeader = body.replace(/^---[\s\S]*?---\n*/, '')
+    const name = extrasBundleName(row.source)
+    const out = path.join(BY_CHAPTER, name)
+    await fs.writeFile(
+      out,
+      [
+        `# Course extras (no chapter assignment)`,
+        ``,
+        `# ${row.source}`,
+        ``,
+        `_Tier ${row.tier} · ${row.method}_`,
+        ``,
+        withoutHeader.trim(),
+        ``,
+      ].join('\n'),
+    )
+  }
+  if (unassigned.length) {
+    console.log(
+      `  + ${unassigned.length} chapter-less extras → chapter-00-*.md (included in RAG)`,
+    )
+  }
 }
 
 async function main() {
   const args = parseArgs(process.argv)
   await ensureDirs()
+
+  if (args.rebuildOnly) {
+    const existing = await loadExistingManifest()
+    const rows = [...existing.values()].sort((a, b) =>
+      a.source.localeCompare(b.source),
+    )
+    if (rows.length === 0) {
+      console.error('No manifest rows — run a full ingest first.')
+      process.exit(1)
+    }
+    await writeManifest(rows)
+    await rebuildChapterBundles(rows)
+    console.log(`Rebuilt by-chapter from ${rows.length} manifest rows.`)
+    return
+  }
 
   const entries = (await fs.readdir(SOURCE_DIR))
     .filter((n) => !n.startsWith('.'))

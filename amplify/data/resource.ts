@@ -184,12 +184,19 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(xaiStudy)),
 
-  /** Lightweight clinical scenario (vignette + ordered short-answer steps). */
+  /**
+   * Clinical scenario pack (vignette + ordered short-answer steps).
+   * Server generate→verify→retry; only verified scenarios are returned (fail closed).
+   */
   generateClinicalScenario: a
     .mutation()
     .arguments({
       scope: a.string().required(),
       context: a.string().required(),
+      /** Pack size 1–5 (default 1). */
+      count: a.integer(),
+      /** Optional chapter label for prompting (e.g. "12"). */
+      chapter: a.string(),
     })
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])
