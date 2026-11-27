@@ -1,4 +1,5 @@
 import { dataClient } from '@/lib/amplifyData'
+import { scrubSecrets } from './scrub'
 
 const MAX_STACK = 4000
 const MAX_MESSAGE = 500
@@ -11,11 +12,7 @@ export type ReportErrorInput = {
 }
 
 function scrubMessage(message: string): string {
-  return message
-    .replace(/sk-[a-zA-Z0-9]{10,}/g, '[redacted]')
-    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
-    .replace(/api[_-]?key[=:]\s*\S+/gi, 'api_key=[redacted]')
-    .slice(0, MAX_MESSAGE)
+  return scrubSecrets(message, MAX_MESSAGE)
 }
 
 /** Persist a runtime error. Fire-and-forget; never throws into the UI. */
@@ -27,7 +24,7 @@ export function reportError(input: ReportErrorInput): void {
     (typeof window !== 'undefined'
       ? `${window.location.pathname}${window.location.search}`.slice(0, 300)
       : undefined)
-  const stack = input.stack ? input.stack.slice(0, MAX_STACK) : undefined
+  const stack = input.stack ? scrubSecrets(input.stack, MAX_STACK) : undefined
   const userAgent =
     typeof navigator !== 'undefined'
       ? navigator.userAgent.slice(0, 200)

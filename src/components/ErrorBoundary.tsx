@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { reportError } from '@/lib/errorLog'
+import { stashPendingError } from '@/lib/feedbackTrail'
 import { Button } from '@/components/ui/button'
 
 type Props = { children: ReactNode }
@@ -16,10 +17,22 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    const route =
+      typeof window !== 'undefined'
+        ? `${window.location.pathname}${window.location.search}`.slice(0, 300)
+        : undefined
+    const componentHint = info.componentStack?.slice(0, 120) || 'ErrorBoundary'
     reportError({
       message: error.message || 'React render error',
       stack: error.stack,
-      componentHint: info.componentStack?.slice(0, 120) || 'ErrorBoundary',
+      componentHint,
+    })
+    stashPendingError({
+      message: error.message || 'Something went wrong',
+      stack: error.stack,
+      route,
+      componentHint,
+      createdAt: new Date().toISOString(),
     })
   }
 
@@ -31,18 +44,30 @@ export class ErrorBoundary extends Component<Props, State> {
             Something went wrong
           </h1>
           <p className="text-muted-foreground max-w-md text-sm">
-            {this.state.message}. The error was logged for diagnosis. Try
-            reloading the page.
+            {this.state.message}. The error was saved with this page so you can
+            send it to the developer. Try reloading, or report it while it is
+            still on screen.
           </p>
-          <Button
-            type="button"
-            onClick={() => {
-              this.setState({ hasError: false, message: '' })
-              window.location.assign('/dashboard')
-            }}
-          >
-            Back to dashboard
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, message: '' })
+                window.location.assign('/dashboard')
+              }}
+            >
+              Back to dashboard
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                window.location.assign('/contact')
+              }}
+            >
+              Tell the developer
+            </Button>
+          </div>
         </div>
       )
     }

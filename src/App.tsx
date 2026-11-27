@@ -4,6 +4,7 @@ import { RequireAuth } from '@/auth/RequireAuth'
 import { AppShell } from '@/components/layout/AppShell'
 import { AttemptDetailPage } from '@/pages/AttemptDetailPage'
 import { ConfirmSignUpPage } from '@/pages/ConfirmSignUpPage'
+import { ContactDeveloperPage } from '@/pages/ContactDeveloperPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { FeatureRequestsPage } from '@/pages/FeatureRequestsPage'
 import { FlashcardsPage } from '@/pages/FlashcardsPage'
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="/progress" element={<ProgressPage />} />
               <Route path="/review" element={<ReviewPage />} />
               <Route path="/requests" element={<FeatureRequestsPage />} />
+              <Route path="/contact" element={<ContactDeveloperPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/history/:attemptId" element={<AttemptDetailPage />} />
             </Route>

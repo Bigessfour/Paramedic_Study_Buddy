@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "node --experimental-strip-types --test src/lib/feedbackReport.test.ts src/lib/feedbackTrail.test.ts",
+    "ci": "npm run lint && npm test && npm run build",
     "preview": "vite preview",
     "sandbox": "ampx sandbox",
     "sandbox:once": "ampx sandbox --once",
