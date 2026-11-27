@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Category,
@@ -16,17 +16,27 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
 import { attemptStats, listAttempts, type Attempt } from '@/lib/attempts'
 import { buttonVariants } from '@/components/ui/button'
+import {
+  loadCycleSchedule,
+  pickStudyNow,
+  scopeFromSession,
+  type CycleSchedule,
+} from '@/lib/schedule'
 import { buildTopicBreakdown, weakTopicsScope } from '@/lib/topics'
 import { cn } from 'cn'
 
 export function DashboardPage() {
   const { user } = useAuth()
   const [attempts, setAttempts] = useState<Attempt[]>([])
+  const [schedule, setSchedule] = useState<CycleSchedule | null>(null)
+  const [scheduleReady, setScheduleReady] = useState(false)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -48,6 +58,46 @@ export function DashboardPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await loadCycleSchedule()
+        if (!cancelled) {
+          setSchedule(data)
+          setScheduleError(null)
+          setScheduleReady(true)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSchedule(null)
+          setScheduleError(
+            err instanceof Error ? err.message : 'Could not load schedule',
+          )
+          setScheduleReady(true)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const studyNow = useMemo(
+    () => (schedule ? pickStudyNow(schedule) : null),
+    [schedule],
+  )
+  const focusScope = studyNow?.focus ? scopeFromSession(studyNow.focus) : null
+  const practiceTo = focusScope
+    ? `/practice?scope=${encodeURIComponent(focusScope)}&source=schedule`
+    : null
+  const scenarioTo = focusScope
+    ? `/practice?mode=scenario&scope=${encodeURIComponent(focusScope)}&source=schedule`
+    : null
+  const tutorTo = focusScope
+    ? `/tutor?scope=${encodeURIComponent(focusScope)}`
+    : '/tutor'
 
   const stats = attemptStats(attempts)
   const topicBreakdown = buildTopicBreakdown(attempts)
@@ -136,6 +186,102 @@ export function DashboardPage() {
       {error ? (
         <p className="text-destructive text-sm">{error}</p>
       ) : null}
+
+      <Card className="border-primary/30">
+        <CardHeader>
+          <CardTitle>Study now</CardTitle>
+          <CardDescription>
+            Cycle {schedule?.cycle ?? '17'} schedule — focus on what class is
+            covering this week.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!scheduleReady ? (
+            <p className="text-muted-foreground text-sm">Loading schedule…</p>
+          ) : scheduleError ? (
+            <p className="text-destructive text-sm">{scheduleError}</p>
+          ) : !schedule ? (
+            <p className="text-muted-foreground text-sm">
+              No schedule loaded. Run{' '}
+              <code className="text-xs">npm run parse:schedule</code> then{' '}
+              <code className="text-xs">npm run upload:course</code>.
+            </p>
+          ) : studyNow?.focus ? (
+            <>
+              <div>
+                <p className="text-muted-foreground text-xs uppercase tracking-wide">
+                  {studyNow.focus.date === studyNow.today
+                    ? 'Today'
+                    : 'Next session'}{' '}
+                  · {studyNow.focus.date}
+                  {studyNow.focus.week != null
+                    ? ` · Week ${studyNow.focus.week}`
+                    : ''}
+                </p>
+                <p className="mt-1 text-base font-medium leading-snug">
+                  {studyNow.focus.label}
+                </p>
+                {studyNow.focus.chapters.length > 0 ? (
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    Chapters {studyNow.focus.chapters.slice(0, 8).join(', ')}
+                    {studyNow.focus.topics.length
+                      ? ` · ${studyNow.focus.topics.join(', ')}`
+                      : ''}
+                  </p>
+                ) : null}
+              </div>
+              {studyNow.upcoming.length > 1 ? (
+                <ul className="text-muted-foreground space-y-1 text-sm">
+                  {studyNow.upcoming.slice(0, 5).map((s) => (
+                    <li key={`${s.date}-${s.label}`}>
+                      <span className="text-foreground font-medium">
+                        {s.date}
+                      </span>
+                      {' — '}
+                      {s.label.length > 72
+                        ? `${s.label.slice(0, 70)}…`
+                        : s.label}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Schedule is loaded but no upcoming sessions were found.
+            </p>
+          )}
+        </CardContent>
+        {focusScope ? (
+          <CardFooter className="flex flex-wrap gap-2">
+            {practiceTo ? (
+              <Link to={practiceTo} className={cn(buttonVariants())}>
+                Practice this topic
+              </Link>
+            ) : null}
+            {scenarioTo ? (
+              <Link
+                to={scenarioTo}
+                className={cn(buttonVariants({ variant: 'secondary' }))}
+              >
+                Clinical scenario
+              </Link>
+            ) : null}
+            <Link
+              to="/review"
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
+              Review today
+            </Link>
+            <Link
+              to={tutorTo}
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
+              Tutor
+            </Link>
+          </CardFooter>
+        ) : null}
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

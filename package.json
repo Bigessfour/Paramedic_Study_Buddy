@@ -15,7 +15,8 @@
     "embed:course": "node scripts/embed-course-context.mjs",
     "upload:course": "node scripts/upload-course-context.mjs",
     "deploy": "bash scripts/deploy-web.sh",
-    "deploy:web": "bash scripts/deploy-web.sh"
+    "deploy:web": "bash scripts/deploy-web.sh",
+    "parse:schedule": "node scripts/parse-cycle-schedule.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1175.0",

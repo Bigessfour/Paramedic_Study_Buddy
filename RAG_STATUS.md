@@ -22,8 +22,9 @@ The course pack is RAG-ready when all of the following are true:
 
 ## Checklist
 
-- [x] Local ingest QC green (manifest + chapters 1–53 + 55 extras) — 351 ok, 0 needsOcr
-- [x] Embeddings written under `course-context/embeddings/` (gitignored) — **5726** chunks (3262 chapter + 2464 extras)
+- [x] Local ingest QC green (manifest + chapters 1–53 + 58 extras) — 354 ok, 0 needsOcr
+- [x] Embeddings written under `course-context/embeddings/` (gitignored) — **5754** chunks
+- [x] Cycle 17 schedule parsed → `course-context/schedule/cycle-17.json` + Dashboard **Study now** card
 - [x] Upload pushes text + `ClassChunk` rows for the class library
 - [x] Practice uses semantic retrieval when chunks exist; keyword fallback otherwise (`src/lib/ragContext.ts`); chapter `"0"` extras always eligible
 - [x] README + `.env.example` document commands and embedding env
@@ -34,7 +35,9 @@ The course pack is RAG-ready when all of the following are true:
 
 - PDF / DOCX / PPTX with a chapter number → `chapter-01.md` … `chapter-53.md`
 - Same formats **without** a chapter number → `chapter-00-*.md` (one file per source), embedded as chapter `"0"` / “Course extras”
-- Not ingested: `Course inventory.tsv` (unsupported)
+- Recent scans: Cycle 17 schedule (Sep 29 2026), pharmacology terminology handout, ventilator waveforms
+- Schedule JSON (`schedule/cycle-17.json`) powers Dashboard Study Now (not only RAG)
+- Not ingested: `Course inventory.tsv`; non-academy Desktop scans (EIAF / town docs)
 
 ### Tutor quality (course-first)
 
@@ -51,9 +54,11 @@ npm run ingest:course:ocr
 # or rebuild bundles only (after prior extract):
 node scripts/ingest-course-pack.mjs --rebuild-only
 
-AWS_PROFILE=steve npm run embed:course
+npm run parse:schedule          # OCR schedule → course-context/schedule/cycle-17.json
+AWS_PROFILE=steve npm run embed:course -- --chapters 0
 # INGEST_EMAIL / INGEST_PASSWORD in .env.local
-npm run upload:course
+npm run upload:course           # includes schedule ClassMaterial upsert
+# schedule only: npm run upload:course -- --schedule-only
 ```
 
 See [`README.md`](./README.md) and [`INGEST_PLAN.md`](./INGEST_PLAN.md).

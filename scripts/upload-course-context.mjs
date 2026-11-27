@@ -16,6 +16,7 @@
  *   node scripts/upload-course-context.mjs --embeddings-only
  *   node scripts/upload-course-context.mjs --index-files
  *   node scripts/upload-course-context.mjs --personal   # legacy private path (not shared)
+ *   node scripts/upload-course-context.mjs --schedule-only
  */
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -30,6 +31,8 @@ const OUT_DIR = path.join(ROOT, 'course-context')
 const MANIFEST = path.join(OUT_DIR, 'manifest.jsonl')
 const BY_CHAPTER = path.join(OUT_DIR, 'by-chapter')
 const EMBEDDINGS_FILE = path.join(OUT_DIR, 'embeddings', 'chunks.jsonl')
+const SCHEDULE_FILE = path.join(OUT_DIR, 'schedule', 'cycle-17.json')
+const SCHEDULE_FILENAME = 'schedule/cycle-17.json'
 const MAX_DYNAMO_CHARS = 80_000
 const CHUNK_BATCH = 25
 
@@ -40,6 +43,7 @@ function parseArgs(argv) {
     indexFiles: argv.includes('--index-files'),
     skipEmbeddings: argv.includes('--skip-embeddings'),
     embeddingsOnly: argv.includes('--embeddings-only'),
+    scheduleOnly: argv.includes('--schedule-only'),
     personal: argv.includes('--personal'),
     limit: (() => {
       const i = argv.indexOf('--limit')
@@ -106,6 +110,55 @@ async function putEmbeddingsBackup(outputs, session, s3Key, raw) {
     }),
   )
   return s3Key
+}
+
+async function upsertScheduleMaterial(client, root, args) {
+  let raw
+  try {
+    raw = await fs.readFile(SCHEDULE_FILE, 'utf8')
+  } catch {
+    console.warn(`No ${SCHEDULE_FILE} — skip schedule upload (run parse-cycle-schedule.mjs).`)
+    return { uploaded: 0, indexed: 0 }
+  }
+
+  const s3Key = `${root}/course-pack/${SCHEDULE_FILENAME}`
+  if (args.dryRun) {
+    console.log(`DRY schedule → ${s3Key} (${raw.length} chars)`)
+    return { uploaded: 1, indexed: 1 }
+  }
+
+  await uploadData({
+    path: s3Key,
+    data: raw,
+    options: { contentType: 'application/json; charset=utf-8' },
+  }).result
+
+  const existing = await listAllModel(client, args.personal ? 'Material' : 'ClassMaterial')
+  const materialModel = args.personal ? 'Material' : 'ClassMaterial'
+  const prior = existing.filter((m) => m.filename === SCHEDULE_FILENAME)
+  for (const old of prior) {
+    await client.models[materialModel].delete({ id: old.id })
+  }
+
+  const truncated =
+    raw.length > MAX_DYNAMO_CHARS
+      ? `${raw.slice(0, MAX_DYNAMO_CHARS)}\n\n[Truncated; full JSON in S3]`
+      : raw
+  const { errors } = await client.models[materialModel].create({
+    filename: SCHEDULE_FILENAME,
+    contentType: 'application/json',
+    sizeBytes: Buffer.byteLength(raw, 'utf8'),
+    s3Key,
+    extractedText: truncated,
+    extractStatus: 'ready',
+    uploadedAt: new Date().toISOString(),
+  })
+  if (errors?.length) {
+    console.error(`${materialModel} schedule create failed`, errors)
+    return { uploaded: 1, indexed: 0 }
+  }
+  console.log(`Schedule indexed → ${SCHEDULE_FILENAME}`)
+  return { uploaded: 1, indexed: 1 }
 }
 
 async function syncCourseChunks(client, outputs, session, identityId, args) {
@@ -232,6 +285,15 @@ async function main() {
       : 'Mode: class library (shared read for all signed-in classmates)',
   )
 
+  if (args.scheduleOnly) {
+    const sched = await upsertScheduleMaterial(client, root, args)
+    if (!args.dryRun) await signOut()
+    console.log(
+      `Done (schedule-only). Uploaded ${sched.uploaded}, indexed ${sched.indexed}.`,
+    )
+    return
+  }
+
   const uploads = []
   if (!args.embeddingsOnly) {
     if (!args.chaptersOnly) {
@@ -320,6 +382,10 @@ async function main() {
   } else {
     console.log('Skipping embeddings (--skip-embeddings)')
   }
+
+  const sched = await upsertScheduleMaterial(client, root, args)
+  uploaded += sched.uploaded
+  indexed += sched.indexed
 
   if (!args.dryRun) {
     await signOut()
