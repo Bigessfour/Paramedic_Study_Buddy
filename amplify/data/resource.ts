@@ -139,6 +139,36 @@ const schema = a.schema({
     })
     .authorization((allow) => [allow.owner()]),
 
+  /**
+   * Owner-private study identity + preferences (not shared with classmates).
+   * One logical row per owner; client upserts via list-then-update/create.
+   */
+  StudentProfile: a
+    .model({
+      preferredName: a.string().required(),
+      textScale: a.enum(['normal', 'large', 'xl']),
+      defaultQuestionCount: a.integer(),
+      tutorGreetByName: a.boolean(),
+      tutorAskAboutTests: a.boolean(),
+      /** 1 = struggling … 5 = confident */
+      courseConfidence: a.integer(),
+      selfWeakTopics: a.string(),
+      notesForTutor: a.string(),
+      updatedAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /** Owner-private study check-ins (external exams, weekly feel, focus requests). */
+  StudyCheckIn: a
+    .model({
+      kind: a.enum(['external_exam', 'weekly_feel', 'focus_request']),
+      feeling: a.string().required(),
+      relatedScope: a.string(),
+      scoreOrOutcome: a.string(),
+      createdAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
   generatePracticeTest: a
     .mutation()
     .arguments({
@@ -168,6 +198,10 @@ const schema = a.schema({
       message: a.string().required(),
       context: a.string().required(),
       historyJson: a.string(),
+      /** Compact owner-private personalization summary (no email/secrets). */
+      studentContext: a.string(),
+      /** JSON catalog of [src-N] sources for citation resolution. */
+      sourcesJson: a.string(),
     })
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])

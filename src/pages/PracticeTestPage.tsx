@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useStudentProfile } from '@/auth/StudentProfileProvider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ import {
   listAllCourseChunks,
   selectRagContext,
 } from '@/lib/ragContext'
+import { clampQuestionCount } from '@/lib/studentProfile'
 import { track } from '@/lib/telemetry'
 import { inferTopicsFromScope } from '@/lib/topics'
 import type { Schema } from '../../amplify/data/resource'
@@ -115,10 +117,12 @@ type PracticeMode = 'practice' | 'scenario'
 
 export function PracticeTestPage() {
   const [searchParams] = useSearchParams()
+  const { profile } = useStudentProfile()
   const [materials, setMaterials] = useState<Material[]>([])
   const [chunks, setChunks] = useState<CourseChunk[]>([])
   const [scope, setScope] = useState('Chapter 12 airway and ventilation')
   const [questionCount, setQuestionCount] = useState(5)
+  const appliedProfileDefaults = useRef(false)
   const [mcPercent, setMcPercent] = useState(60)
   const [courseFormat, setCourseFormat] = useState(false)
   const [examMode, setExamMode] = useState(false)
@@ -177,6 +181,18 @@ export function PracticeTestPage() {
       setCourseFormat(true)
     }
   }, [searchParams])
+
+  useEffect(() => {
+    if (appliedProfileDefaults.current || !profile) return
+    if (searchParams.get('count')) {
+      appliedProfileDefaults.current = true
+      return
+    }
+    if (typeof profile.defaultQuestionCount === 'number') {
+      setQuestionCount(clampQuestionCount(profile.defaultQuestionCount))
+    }
+    appliedProfileDefaults.current = true
+  }, [profile, searchParams])
 
   useEffect(() => {
     void (async () => {
@@ -744,6 +760,24 @@ export function PracticeTestPage() {
 
               {practiceMode === 'practice' ? (
                 <>
+                  {profile?.selfWeakTopics?.trim() &&
+                  !searchParams.get('scope')?.trim() ? (
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">
+                        From Settings:
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setScope(profile.selfWeakTopics!.trim())
+                        }
+                      >
+                        Use my focus areas
+                      </Button>
+                    </div>
+                  ) : null}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="count">Number of questions</Label>

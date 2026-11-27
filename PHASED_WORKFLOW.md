@@ -1,7 +1,7 @@
 # Paramedic Study Buddy — Phased Cursor Workflow & Definition of Done
 
-**Repo:** https://github.com/Bigessfour/Paramedic_Study_Buddy  
-**Stack:** React (Vite) + TypeScript + shadcn/ui + Tailwind + selective Syncfusion (Community License) + AWS Amplify (Cognito multi-tenant) + S3 + xAI API  
+**Repo:** https://github.com/Bigessfour/Paramedic_Study_Buddy
+**Stack:** React (Vite) + TypeScript + shadcn/ui + Tailwind + selective Syncfusion (Community License) + AWS Amplify (Cognito multi-tenant) + S3 + xAI API
 **Goal:** Ship a usable multi-tenant practice-test tool for Mallorie and her classmates. Stop when the Definition of Done is met.
 
 ---
@@ -211,6 +211,8 @@ Do not start feature implementation until this Definition of Done is committed. 
 - Syncfusion license key and xAI key stay in environment variables only.
 
 v1 (Phases 0–5), Phase 6 (v1.1), course-pack RAG, and Phase 7 (v1.2) are shipped. Production readiness is Phase 8 — see [`PROD_READY.md`](./PROD_READY.md).
+
+**Optional / gated — Olson pharmacology private RAG:** waiting on MedMaster written permission. Do not ingest until granted. Full research + post-approval steps: [`PHARM_OLSON_PERMISSIONS_PLAN.md`](./PHARM_OLSON_PERMISSIONS_PLAN.md).
 
 ---
 

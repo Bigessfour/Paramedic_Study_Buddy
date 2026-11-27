@@ -459,15 +459,55 @@ ${supplement.text}`
     }
   }
 
+  const studentContext =
+    typeof args.studentContext === 'string' ? args.studentContext.trim() : ''
+  const studentBlock = studentContext
+    ? `Student personalization (owner-private; use for tone and focus only — do not invent course facts from this block; never ask for or repeat email/passwords):
+---
+${studentContext.slice(0, 2000)}
+---
+`
+    : ''
+
+  let sourcesCatalog: Array<{ id: string; label?: string; kind?: string }> = []
+  if (typeof args.sourcesJson === 'string' && args.sourcesJson.trim()) {
+    try {
+      const parsedSources = JSON.parse(args.sourcesJson) as unknown
+      if (Array.isArray(parsedSources)) {
+        sourcesCatalog = parsedSources
+          .filter((s) => s && typeof s === 'object')
+          .map((s) => {
+            const row = s as Record<string, unknown>
+            return {
+              id: String(row.id ?? '').trim(),
+              label: row.label != null ? String(row.label) : undefined,
+              kind: row.kind != null ? String(row.kind) : undefined,
+            }
+          })
+          .filter((s) => s.id)
+          .slice(0, 40)
+      }
+    } catch {
+      // ignore bad catalog; still answer from context
+    }
+  }
+
+  const catalogHint =
+    sourcesCatalog.length > 0
+      ? `Available source ids (cite with these ids only):\n${JSON.stringify(sourcesCatalog).slice(0, 4000)}\n`
+      : ''
+
   const system = `You are a paramedic study tutor for a multi-tenant study app.
 Rules:
 - Prefer facts from the course material context. When listing items (e.g. EMS system components), quote or enumerate them from context when present.
-- Cite sources using filenames/chapter labels from the context (e.g. chapter-01.md, Table 1-1).
-- If the context only says "refer to Table X" without the table body, and a SUPPLEMENT section is provided, you MAY use the supplement to answer, and you MUST say it is a course-aligned supplement for that table/gap.
+- Context blocks are tagged like [src-1]. When you use a fact, cite that source id in the citations array.
+- If a SUPPLEMENT / fetch_official_supplement tool result is present, you MAY use it for table/list gaps and MUST cite it; say it is a course-aligned supplement.
+- Do NOT use or invent MedMaster / Olson textbook content. Commercial texts stay out of scope unless separately licensed.
 - If neither course context nor supplement has the answer, say you cannot find it in the uploaded materials and suggest which chapter/table to review.
+- When student personalization is provided: address them by preferred name if greet-by-name is on; bias practice suggestions toward their self-reported weak topics; if ask-about-tests is on and a recent check-in mentions an external exam, you may briefly ask how it went — once, not every message.
 - Be concise and clinically accurate. Return JSON only.`
 
-  const user = `Course material context:
+  const user = `${studentBlock}${catalogHint}Tool results + course material context:
 ---
 ${enrichedContext.slice(0, 24000)}
 ---
@@ -479,9 +519,10 @@ Student message: ${message}
 
 Return JSON:
 {
-  "reply": "tutor response",
+  "reply": "tutor response (you may mention source labels in prose)",
   "followUps": ["optional follow-up question 1", "optional follow-up question 2"],
   "citedTopics": ["topic labels from context if any"],
+  "citations": [{"sourceId": "src-1", "note": "optional short note"}],
   "usedSupplement": ${usedWebSupplement ? 'true' : 'false'}
 }`
 
@@ -495,10 +536,26 @@ Return JSON:
   const citedTopics = Array.isArray(parsed.citedTopics)
     ? parsed.citedTopics.map((t) => String(t)).filter(Boolean).slice(0, 8)
     : []
+  const catalogIds = new Set(sourcesCatalog.map((s) => s.id))
+  const citationsRaw = Array.isArray(parsed.citations) ? parsed.citations : []
+  const citations = citationsRaw
+    .filter((c) => c && typeof c === 'object')
+    .map((c) => {
+      const row = c as Record<string, unknown>
+      return {
+        sourceId: String(row.sourceId ?? row.id ?? '').trim(),
+        note:
+          row.note != null ? String(row.note).trim().slice(0, 200) : undefined,
+      }
+    })
+    .filter((c) => c.sourceId && (catalogIds.size === 0 || catalogIds.has(c.sourceId)))
+    .slice(0, 12)
+
   return {
     reply,
     followUps,
     citedTopics,
+    citations,
     usedSupplement: usedWebSupplement,
     supplementSource: webSource,
   }

@@ -1,4 +1,9 @@
 import type { Schema } from '../../amplify/data/resource'
+import {
+  createSourceIdFactory,
+  materialsHref,
+  type TutorSource,
+} from '@/lib/tutorSources'
 
 type Material = Schema['Material']['type']
 
@@ -114,18 +119,30 @@ export function selectMaterialContext(
   matchedCount: number
   topics: string[]
   retrieval: 'enhanced-lexical' | 'sample'
+  sources: TutorSource[]
 } {
+  const nextId = createSourceIdFactory()
   const ready = materials.filter(
     (m) => m.extractStatus === 'ready' && (m.extractedText?.trim()?.length ?? 0) > 0,
   )
 
   if (ready.length === 0) {
+    const id = nextId()
     return {
-      context: SAMPLE_CONTEXT,
+      context: `[${id}] ${SAMPLE_CONTEXT}`,
       usedSample: true,
       matchedCount: 0,
       topics: ['sample'],
       retrieval: 'sample',
+      sources: [
+        {
+          id,
+          kind: 'supplement',
+          label: 'Sample study context',
+          excerpt: SAMPLE_CONTEXT.slice(0, 400),
+          href: '/materials',
+        },
+      ],
     }
   }
 
@@ -157,6 +174,7 @@ export function selectMaterialContext(
   scored.sort((a, b) => b.score - a.score)
 
   const chunksOut: string[] = []
+  const sources: TutorSource[] = []
   const topics = new Set<string>()
   let total = 0
   let matchedCount = 0
@@ -165,11 +183,23 @@ export function selectMaterialContext(
   for (const item of scored) {
     if (total >= maxChars) break
     if (item.score <= 0 && terms.length > 0 && matchedCount > 0) continue
-    const header = `Source: ${item.material.filename} (${item.topicHint})\n`
+    const id = nextId()
+    const filename = item.material.filename ?? 'material'
+    const body = item.chunk.slice(0, Math.max(80, maxChars - total - 80))
+    const header = `[${id}] Source: ${filename} (${item.topicHint})\n`
     const remaining = maxChars - total - header.length
     if (remaining <= 80) break
-    chunksOut.push(header + item.chunk.slice(0, remaining))
-    total += header.length + Math.min(item.chunk.length, remaining)
+    const clipped = body.slice(0, remaining)
+    chunksOut.push(header + clipped)
+    sources.push({
+      id,
+      kind: 'course',
+      label: `${filename} (${item.topicHint})`,
+      detail: item.topicHint,
+      excerpt: clipped.slice(0, 500),
+      href: materialsHref(filename),
+    })
+    total += header.length + clipped.length
     topics.add(item.topicHint)
     const mid = item.material.id ?? item.material.filename
     if (mid && !seenMaterials.has(mid)) {
@@ -179,15 +209,22 @@ export function selectMaterialContext(
   }
 
   if (chunksOut.length === 0) {
-    // Fallback: take leading text from longest materials
     const byLen = [...ready].sort(
       (a, b) => (b.extractedText?.length ?? 0) - (a.extractedText?.length ?? 0),
     )
     for (const m of byLen.slice(0, 3)) {
-      const header = `Source: ${m.filename}\n`
+      const id = nextId()
+      const filename = m.filename ?? 'material'
       const body = (m.extractedText ?? '').slice(0, Math.floor(maxChars / 3))
-      chunksOut.push(header + body)
-      topics.add(topicFromFilename(m.filename ?? 'material'))
+      chunksOut.push(`[${id}] Source: ${filename}\n${body}`)
+      sources.push({
+        id,
+        kind: 'course',
+        label: filename,
+        excerpt: body.slice(0, 500),
+        href: materialsHref(filename),
+      })
+      topics.add(topicFromFilename(filename))
       matchedCount += 1
     }
   }
@@ -198,5 +235,6 @@ export function selectMaterialContext(
     matchedCount,
     topics: [...topics].slice(0, 12),
     retrieval: 'enhanced-lexical',
+    sources,
   }
 }

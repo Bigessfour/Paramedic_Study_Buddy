@@ -11,7 +11,7 @@ import {
   SeriesDirective,
   Tooltip,
 } from '@syncfusion/ej2-react-charts'
-import { useAuth } from '@/auth/AuthProvider'
+import { useStudentProfile } from '@/auth/StudentProfileProvider'
 import {
   Card,
   CardContent,
@@ -29,10 +29,10 @@ import {
   type CycleSchedule,
 } from '@/lib/schedule'
 import { buildTopicBreakdown, weakTopicsScope } from '@/lib/topics'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 export function DashboardPage() {
-  const { user } = useAuth()
+  const { preferredName, profile } = useStudentProfile()
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [schedule, setSchedule] = useState<CycleSchedule | null>(null)
   const [scheduleReady, setScheduleReady] = useState(false)
@@ -127,11 +127,16 @@ export function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-sm">
-            Welcome back
-            {user?.email ? `, ${user.email}` : ''}.
+            Welcome back, {preferredName}.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            to="/settings"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            Settings
+          </Link>
           <Link
             to="/review"
             className={cn(buttonVariants({ variant: 'outline' }))}
@@ -186,6 +191,49 @@ export function DashboardPage() {
       {error ? (
         <p className="text-destructive text-sm">{error}</p>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>How are you doing?</CardTitle>
+          <CardDescription>
+            Private check-ins and self-reported weak topics help Tutor focus —
+            classmates never see this.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {profile?.selfWeakTopics?.trim() ? (
+            <p>
+              <span className="text-muted-foreground">Focus areas: </span>
+              {profile.selfWeakTopics.trim()}
+            </p>
+          ) : (
+            <p className="text-muted-foreground">
+              No self-reported weak topics yet. Add them in Settings.
+            </p>
+          )}
+          {typeof profile?.courseConfidence === 'number' ? (
+            <p className="text-muted-foreground">
+              Course confidence: {profile.courseConfidence}/5
+            </p>
+          ) : null}
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-2">
+          <Link
+            to="/settings"
+            className={cn(buttonVariants({ variant: 'secondary' }))}
+          >
+            Check in / update Settings
+          </Link>
+          {profile?.selfWeakTopics?.trim() ? (
+            <Link
+              to={`/practice?scope=${encodeURIComponent(profile.selfWeakTopics.trim())}&source=self_weak`}
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
+              Practice my focus areas
+            </Link>
+          ) : null}
+        </CardFooter>
+      </Card>
 
       <Card className="border-primary/30">
         <CardHeader>

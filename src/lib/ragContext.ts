@@ -5,6 +5,11 @@ import {
   selectMaterialContext,
   tokenizeQuery,
 } from '@/lib/materialContext'
+import {
+  createSourceIdFactory,
+  materialsHref,
+  type TutorSource,
+} from '@/lib/tutorSources'
 
 type Material = Schema['Material']['type']
 type CourseChunk = Schema['CourseChunk']['type']
@@ -17,6 +22,8 @@ export type RagSelection = {
   retrieval: 'semantic' | 'enhanced-lexical' | 'sample'
   /** True when context still looks like a table pointer without list body. */
   thinContext?: boolean
+  /** Tagged sources for Tutor citation UI ([src-N] in context). */
+  sources?: TutorSource[]
 }
 
 function cosine(a: number[], b: number[]): number {
@@ -193,6 +200,7 @@ export async function selectRagContext(
     return {
       ...fallback,
       thinContext: isThinCourseContext(fallback.context),
+      sources: fallback.sources,
     }
   }
 
@@ -249,6 +257,8 @@ export async function selectRagContext(
     }
 
     const parts: string[] = []
+    const sources: TutorSource[] = []
+    const nextId = createSourceIdFactory()
     const topics = new Set<string>()
     let total = 0
     let matchedCount = 0
@@ -262,8 +272,23 @@ export async function selectRagContext(
           Math.min(6000, Math.floor(maxChars / 3)),
         )
         if (window) {
-          parts.push(window)
-          total += window.length
+          const id = nextId()
+          const filename =
+            materials.find((m) =>
+              (m.filename ?? '')
+                .toLowerCase()
+                .includes(`chapter-${ch.padStart(2, '0')}`),
+            )?.filename ?? `chapter-${ch.padStart(2, '0')}`
+          sources.push({
+            id,
+            kind: 'course',
+            label: `${filename} (Chapter ${ch})`,
+            detail: `Chapter ${ch}`,
+            excerpt: window.slice(0, 500),
+            href: materialsHref(filename),
+          })
+          parts.push(`[${id}] ${window}`)
+          total += window.length + id.length + 4
           topics.add(`Chapter ${ch}`)
           matchedCount += 1
         }
@@ -276,11 +301,20 @@ export async function selectRagContext(
         String(chunk.chapter) === '0'
           ? 'Course extras'
           : `Chapter ${chunk.chapter}`
-      const header = `Source: ${chunk.source} (${label})\n`
+      const id = nextId()
+      const header = `[${id}] Source: ${chunk.source} (${label})\n`
       const remaining = maxChars - total - header.length
       if (remaining <= 80) break
       const body = (chunk.text ?? '').slice(0, remaining)
       parts.push(header + body)
+      sources.push({
+        id,
+        kind: 'course',
+        label: `${chunk.source} (${label})`,
+        detail: label,
+        excerpt: body.slice(0, 500),
+        href: materialsHref(chunk.source || 'course'),
+      })
       total += header.length + body.length
       topics.add(label)
       matchedCount += 1
@@ -291,6 +325,7 @@ export async function selectRagContext(
       return {
         ...fallback,
         thinContext: isThinCourseContext(fallback.context),
+        sources: fallback.sources,
       }
     }
 
@@ -302,12 +337,14 @@ export async function selectRagContext(
       topics: [...topics].slice(0, 12),
       retrieval: 'semantic',
       thinContext: isThinCourseContext(context),
+      sources,
     }
   } catch {
     const fallback = selectMaterialContext(materials, scope, maxChars)
     return {
       ...fallback,
       thinContext: isThinCourseContext(fallback.context),
+      sources: fallback.sources,
     }
   }
 }

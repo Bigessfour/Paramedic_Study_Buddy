@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { remove, uploadData } from 'aws-amplify/storage'
 import { FileUp, Loader2, Trash2 } from 'lucide-react'
@@ -44,12 +45,34 @@ function formatDate(value: string | null | undefined) {
 }
 
 export function MaterialsPage() {
+  const [searchParams] = useSearchParams()
+  const highlightFile = (searchParams.get('file') ?? '').trim().toLowerCase()
   const [materials, setMaterials] = useState<Material[]>([])
   const [classMaterials, setClassMaterials] = useState<ClassMaterial[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const sortedPersonal = useMemo(() => {
+    const rows = [...materials]
+    if (!highlightFile) return rows
+    return rows.sort((a, b) => {
+      const aHit = (a.filename ?? '').toLowerCase().includes(highlightFile) ? 0 : 1
+      const bHit = (b.filename ?? '').toLowerCase().includes(highlightFile) ? 0 : 1
+      return aHit - bHit
+    })
+  }, [materials, highlightFile])
+
+  const sortedClass = useMemo(() => {
+    const rows = [...classMaterials]
+    if (!highlightFile) return rows
+    return rows.sort((a, b) => {
+      const aHit = (a.filename ?? '').toLowerCase().includes(highlightFile) ? 0 : 1
+      const bHit = (b.filename ?? '').toLowerCase().includes(highlightFile) ? 0 : 1
+      return aHit - bHit
+    })
+  }, [classMaterials, highlightFile])
 
   const loadMaterials = useCallback(async () => {
     setError(null)
@@ -196,6 +219,12 @@ export function MaterialsPage() {
           Class textbook library is shared with signed-in classmates. Your own
           uploads stay private and also feed practice/tutor context.
         </p>
+        {highlightFile ? (
+          <p className="text-muted-foreground mt-2 text-xs">
+            Highlighting Tutor citation match for{' '}
+            <span className="text-foreground font-medium">{highlightFile}</span>
+          </p>
+        ) : null}
       </div>
 
       <Card>
@@ -226,10 +255,24 @@ export function MaterialsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {classMaterials.map((material) => (
-                  <TableRow key={material.id}>
+                {sortedClass.map((material) => {
+                  const hit =
+                    highlightFile &&
+                    (material.filename ?? '')
+                      .toLowerCase()
+                      .includes(highlightFile)
+                  return (
+                  <TableRow
+                    key={material.id}
+                    className={hit ? 'bg-muted/60' : undefined}
+                  >
                     <TableCell className="max-w-[14rem] truncate font-medium">
                       {material.filename}
+                      {hit ? (
+                        <Badge className="ml-2" variant="secondary">
+                          Cited
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell>{formatBytes(material.sizeBytes ?? 0)}</TableCell>
                     <TableCell>{formatDate(material.uploadedAt)}</TableCell>
@@ -243,7 +286,8 @@ export function MaterialsPage() {
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           )}
@@ -325,10 +369,24 @@ export function MaterialsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {materials.map((material) => (
-                  <TableRow key={material.id}>
+                {sortedPersonal.map((material) => {
+                  const hit =
+                    highlightFile &&
+                    (material.filename ?? '')
+                      .toLowerCase()
+                      .includes(highlightFile)
+                  return (
+                  <TableRow
+                    key={material.id}
+                    className={hit ? 'bg-muted/60' : undefined}
+                  >
                     <TableCell className="max-w-[14rem] truncate font-medium">
                       {material.filename}
+                      {hit ? (
+                        <Badge className="ml-2" variant="secondary">
+                          Cited
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell>{formatBytes(material.sizeBytes ?? 0)}</TableCell>
                     <TableCell>{formatDate(material.uploadedAt)}</TableCell>
@@ -355,7 +413,8 @@ export function MaterialsPage() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           )}

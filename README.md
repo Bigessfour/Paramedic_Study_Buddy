@@ -49,10 +49,31 @@ See [`PROD_READY.md`](./PROD_READY.md). Smoke log: [`SMOKE_TEST.md`](./SMOKE_TES
 - **Telemetry:** Unhandled errors → owner-scoped `ErrorLog`; feature usage via `track()` → `UsageEvent`. No secrets logged.
 - **Feature requests:** `/requests` — title + description; owner sees their own list only.
 - **Contact the developer:** `/contact` — page, recent actions, latest error, and optional screenshots. The email is a short summary; a downloaded zip holds the full report. Set `VITE_DEVELOPER_EMAIL` before building.
-- **Amplify models:** owner-private `Material`, `Attempt`, `TutorThread`, `Flashcard`, `CourseChunk`, `ErrorLog`, `UsageEvent`, `FeatureRequest`; shared-read `ClassMaterial`, `ClassChunk`.
+- **Amplify models:** owner-private `Material`, `Attempt`, `TutorThread`, `Flashcard`, `CourseChunk`, `ErrorLog`, `UsageEvent`, `FeatureRequest`, `StudentProfile`, `StudyCheckIn`; shared-read `ClassMaterial`, `ClassChunk`.
 - Keep `VITE_SYNCFUSION_LICENSE` set so Grid/Charts have no license banner.
 
-Routes: `/dashboard`, `/materials`, `/practice`, `/history`, `/tutor`, `/flashcards`, `/progress`, `/review`, `/requests`, `/contact`.
+Routes: `/dashboard`, `/materials`, `/practice`, `/history`, `/tutor`, `/flashcards`, `/progress`, `/review`, `/requests`, `/contact`, `/settings`, `/about`.
+
+**Settings / personalization:** Preferred name, text size, study defaults, self-reported weak topics, and check-ins are owner-private (`StudentProfile` / `StudyCheckIn`). Tutor receives a compact `studentContext` summary per request only — see Settings privacy copy.
+
+**Tutor tools + citations:** Each Tutor turn runs client tools (`search_course_materials`, `get_study_now`, `get_student_focus`, optional `fetch_official_supplement`), then Grok returns `citations` keyed to `[src-N]` sources. Course citations link to `/materials?file=…`; schedule → Dashboard; profile → Settings; supplements may open an external URL. Olson / MedMaster remain gated.
+
+---
+
+## Copyright & approved material use
+
+Study Buddy uses copyrighted material **only in an approved manner**. We do not host pirate copies, scrape paywalled textbooks, or redistribute commercial eBooks. See [`COPYRIGHT.md`](./COPYRIGHT.md) and the in-app **About** page (`/about`).
+
+**Example — *Clinical Pharmacology Made Ridiculously Simple* (Ed. 6, James Olson / MedMaster):**
+
+Immediate digital (no shipment):
+
+- [MedMaster eBook](https://medmaster.net/products/clinical-pharmacology-made-ridiculously-simple) — My Bookshelf / MedMaster app (~$27.95; printing not allowed)
+- [VitalSource](https://www.vitalsource.com/products/clinical-pharmacology-made-ridiculously-simple-james-olson-m-d-ph-d-v9781935660712) — fixed-layout eTextbook from ~$29.95
+
+A consumer eBook is for **licensed reading** in the seller’s reader. MedMaster terms forbid building a database from their content without written permission—so do **not** DRM-strip or bulk-ingest Olson into Study Buddy until MedMaster authorizes it. Use academy materials for RAG until then. See [`COPYRIGHT.md`](./COPYRIGHT.md).
+
+**Permissions-gated plan (research + post-approval steps):** [`PHARM_OLSON_PERMISSIONS_PLAN.md`](./PHARM_OLSON_PERMISSIONS_PLAN.md) — status: waiting on MedMaster reply (email sent 2026-11-27).
 
 ---
 
@@ -165,4 +186,5 @@ Optional CI: [`amplify.yml`](./amplify.yml) if you later connect Amplify Hosting
 
 - **Syncfusion:** Community License — `VITE_SYNCFUSION_LICENSE` at app startup.
 - **xAI:** Server-side `XAI_API_KEY` only. Never ship the key in the browser bundle.
+- **Course & third-party texts:** [`COPYRIGHT.md`](./COPYRIGHT.md) — legitimate purchase only; no unauthorized PDFs.
 - This is a study aid, not a substitute for official course materials or certification exams.

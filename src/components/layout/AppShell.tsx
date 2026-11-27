@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BookOpen,
   CalendarCheck,
   ChartColumn,
   ClipboardList,
   History,
+  Info,
   LayoutDashboard,
   Layers,
   Lightbulb,
@@ -13,8 +14,10 @@ import {
   Mail,
   Menu,
   MessagesSquare,
+  Settings,
 } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
+import { useStudentProfile } from '@/auth/StudentProfileProvider'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -33,6 +36,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { pushBreadcrumb } from '@/lib/feedbackTrail'
+import { textScaleClass } from '@/lib/studentProfile'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -45,7 +49,9 @@ const navItems = [
   { to: '/flashcards', label: 'Flashcards', icon: Layers },
   { to: '/requests', label: 'Requests', icon: Lightbulb },
   { to: '/history', label: 'History', icon: History },
+  { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/contact', label: 'Contact', icon: Mail },
+  { to: '/about', label: 'About', icon: Info },
 ] as const
 
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {
@@ -75,8 +81,11 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
 
 export function AppShell() {
   const { user, signOut } = useAuth()
+  const { preferredName, textScale } = useStudentProfile()
   const location = useLocation()
+  const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const initials = (preferredName?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()
 
   useEffect(() => {
     const match = [...navItems]
@@ -89,7 +98,6 @@ export function AppShell() {
       match ? `Opened ${match.label}` : `Opened ${location.pathname}`,
     )
   }, [location.pathname])
-  const initials = (user?.email?.[0] ?? 'U').toUpperCase()
 
   return (
     <div className="bg-background flex min-h-svh">
@@ -136,21 +144,35 @@ export function AppShell() {
                   <AvatarFallback>{initials}</AvatarFallback>
                 </Avatar>
                 <span className="hidden max-w-[12rem] truncate sm:inline">
-                  {user?.email ?? 'Account'}
+                  {preferredName}
                 </span>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col gap-1">
-                    <span className="text-sm font-medium">
-                      {user?.email ?? 'Signed in'}
-                    </span>
-                    <span className="text-muted-foreground font-mono text-[10px] break-all">
-                      {user?.userId}
+                    <span className="text-sm font-medium">{preferredName}</span>
+                    <span className="text-muted-foreground text-xs truncate">
+                      {user?.email}
                     </span>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => {
+                    navigate('/settings')
+                  }}
+                >
+                  <Settings className="size-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    navigate('/contact')
+                  }}
+                >
+                  <Mail className="size-4" />
+                  Contact
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
                     void signOut()
@@ -164,12 +186,23 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 md:p-6">
+        <main
+          className={cn(
+            'flex-1 overflow-auto p-4 md:p-6',
+            textScaleClass(textScale),
+          )}
+        >
           <Outlet />
         </main>
         <footer className="border-border text-muted-foreground border-t px-4 py-3 text-xs">
           Study aid only — not a substitute for official course materials,
-          protocols, or certification exams.
+          protocols, or certification exams.{' '}
+          <NavLink
+            to="/about"
+            className="text-foreground underline underline-offset-2"
+          >
+            About & copyright
+          </NavLink>
         </footer>
       </div>
     </div>

@@ -4,6 +4,10 @@ Private study use of `Paramedic Book/` → local text → S3 + embeddings → se
 
 **Do not commit** `Paramedic Book/` or `course-context/` (gitignored).
 
+### Blocked — Olson / MedMaster pharmacology corpus
+
+*Clinical Pharmacology Made Ridiculously Simple* (Olson, Ed. 6) is **not** in the RAG corpus. Consumer eBook license forbids systematic database ingest without prior written permission. Plan + email trail: [`PHARM_OLSON_PERMISSIONS_PLAN.md`](./PHARM_OLSON_PERMISSIONS_PLAN.md). Resume only after MedMaster grant → owner-scoped private corpus (not class library unless authorized).
+
 ---
 
 ## Definition of Done — course pack RAG-ready
