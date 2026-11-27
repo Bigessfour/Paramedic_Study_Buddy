@@ -98,13 +98,17 @@ Status checklist: [`RAG_STATUS.md`](./RAG_STATUS.md). Live verification log: [`V
 ```bash
 npm run ingest:course:ocr    # PDF/DOCX/PPTX → course-context/ (Vision OCR on Mac)
 # chapter-less files → chapter-00-*.md; rebuild only: node scripts/ingest-course-pack.mjs --rebuild-only
+npm run parse:schedule       # Cycle 17 calendar → course-context/schedule/cycle-17.json
 AWS_PROFILE=steve npm run embed:course   # Bedrock Titan → embeddings/chunks.jsonl
 # set INGEST_EMAIL / INGEST_PASSWORD in .env.local (uploader Cognito user)
-npm run upload:course        # Shared class library: ClassMaterial + ClassChunk + class-library/ S3
+npm run upload:course        # Shared class library: ClassMaterial + ClassChunk + schedule JSON
 # text-only re-run: npm run upload:course -- --skip-embeddings
 # embeddings only:  npm run upload:course -- --embeddings-only
+# schedule only:    npm run upload:course -- --schedule-only
 # legacy private-only (not shared): npm run upload:course -- --personal
 ```
+
+Drop new academy PDFs into `Paramedic Book/` (gitignored), OCR-ingest, then embed/upload. The Dashboard **Study now** card reads `schedule/cycle-17.json` and deep-links Practice / Scenario / Review for today’s (or next) session.
 
 **Class library:** By default `upload:course` publishes to `ClassMaterial` / `ClassChunk` under `class-library/{identityId}/…`. Any signed-in classmate can **read** that library for Practice/Tutor/Flashcards. Personal PDF uploads on Materials stay owner-private. Attempts, tutor threads, and flashcard decks remain per-user.
 
