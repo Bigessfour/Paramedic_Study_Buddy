@@ -27,6 +27,9 @@ aws-exports.js
 Paramedic Book/
 course-context/
 
+# Local feedback zips from the contact form (may contain account email)
+study-buddy-feedback-*.zip
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

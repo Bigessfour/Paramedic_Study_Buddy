@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BookOpen,
   CalendarCheck,
@@ -10,6 +10,7 @@ import {
   Layers,
   Lightbulb,
   LogOut,
+  Mail,
   Menu,
   MessagesSquare,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { pushBreadcrumb } from '@/lib/feedbackTrail'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -43,6 +45,7 @@ const navItems = [
   { to: '/flashcards', label: 'Flashcards', icon: Layers },
   { to: '/requests', label: 'Requests', icon: Lightbulb },
   { to: '/history', label: 'History', icon: History },
+  { to: '/contact', label: 'Contact', icon: Mail },
 ] as const
 
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {
@@ -72,7 +75,20 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
 
 export function AppShell() {
   const { user, signOut } = useAuth()
+  const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    const match = [...navItems]
+      .reverse()
+      .find(
+        ({ to }) =>
+          location.pathname === to || location.pathname.startsWith(`${to}/`),
+      )
+    pushBreadcrumb(
+      match ? `Opened ${match.label}` : `Opened ${location.pathname}`,
+    )
+  }, [location.pathname])
   const initials = (user?.email?.[0] ?? 'U').toUpperCase()
 
   return (

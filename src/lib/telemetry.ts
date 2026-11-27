@@ -1,4 +1,5 @@
 import { dataClient } from '@/lib/amplifyData'
+import { pushBreadcrumb } from './feedbackTrail'
 
 const SENSITIVE_KEY =
   /^(api[_-]?key|password|passwd|secret|token|authorization|auth|xai|license|credential)/i
@@ -31,6 +32,7 @@ export function track(
 ): void {
   const name = eventName.trim().slice(0, 80)
   if (!name) return
+  pushBreadcrumb(name, sanitizeMetadata(metadata))
   const route =
     typeof window !== 'undefined'
       ? `${window.location.pathname}${window.location.search}`.slice(0, 300)

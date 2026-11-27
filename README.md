@@ -48,10 +48,11 @@ See [`PROD_READY.md`](./PROD_READY.md). Smoke log: [`SMOKE_TEST.md`](./SMOKE_TES
 
 - **Telemetry:** Unhandled errors → owner-scoped `ErrorLog`; feature usage via `track()` → `UsageEvent`. No secrets logged.
 - **Feature requests:** `/requests` — title + description; owner sees their own list only.
+- **Contact the developer:** `/contact` — page, recent actions, latest error, and optional screenshots. The email is a short summary; a downloaded zip holds the full report. Set `VITE_DEVELOPER_EMAIL` before building.
 - **Amplify models:** owner-private `Material`, `Attempt`, `TutorThread`, `Flashcard`, `CourseChunk`, `ErrorLog`, `UsageEvent`, `FeatureRequest`; shared-read `ClassMaterial`, `ClassChunk`.
-- No new env vars; keep `VITE_SYNCFUSION_LICENSE` set so Grid/Charts have no license banner.
+- Keep `VITE_SYNCFUSION_LICENSE` set so Grid/Charts have no license banner.
 
-Routes: `/dashboard`, `/materials`, `/practice`, `/history`, `/tutor`, `/flashcards`, `/progress`, `/review`, `/requests`.
+Routes: `/dashboard`, `/materials`, `/practice`, `/history`, `/tutor`, `/flashcards`, `/progress`, `/review`, `/requests`, `/contact`.
 
 ---
 
@@ -127,6 +128,7 @@ See [`.env.example`](./.env.example). Never commit real keys.
 | Name                                     | Where                   | Notes                                    |
 | ---------------------------------------- | ----------------------- | ---------------------------------------- |
 | `VITE_SYNCFUSION_LICENSE`                | Client build            | Community license; registered at startup |
+| `VITE_DEVELOPER_EMAIL`                   | Client build            | Contact form recipient. Not a secret.    |
 | `XAI_API_KEY`                            | Amplify Function secret | Server-only; never `VITE_`               |
 | `INGEST_EMAIL` / `INGEST_PASSWORD`       | Local scripts only      | Cognito user for course-pack upload      |
 | `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` | Local embed + Lambda    | Default `bedrock` + Titan v2             |
@@ -134,6 +136,8 @@ See [`.env.example`](./.env.example). Never commit real keys.
 | `amplify_outputs.json`                   | Client build            | From `sandbox:once` (gitignored)         |
 
 Self-sign-up is enabled (Cognito email/password). Classmates each get their own materials and attempts via owner authorization.
+
+**Contact the developer** (`/contact`, also linked from an error screen and from Feature requests) builds the report in the browser. No new Lambda or email service. Put `VITE_DEVELOPER_EMAIL` in `.env.local` before `npm run build` or `npm run deploy:web` so the mail button has an address. Students attach the downloaded zip themselves.
 
 ---
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -85,7 +86,10 @@ export function FeatureRequestsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Feature requests</h1>
         <p className="text-muted-foreground text-sm">
           Submit ideas for Mallorie and classmates. You only see your own
-          requests (owner-isolated).
+          requests (owner-isolated). If something is broken,{' '}
+          <Link to="/contact" className="text-foreground underline underline-offset-2">
+            contact the developer
+          </Link>.
         </p>
       </div>
 
